@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "updatedAt": 1777635210914,
+  "activeCanvasId": "canvas-1777631085485-sh0db",
+  "selectedId": "../相关文档/设计笔记/9.75车完9.png",
+  "canvases": [
+    {
+      "id": "canvas-1777631085485-sh0db",
+      "name": "机加出图",
+      "placedNodes": {
+        "../相关文档/设计笔记/9.75车完9.png": {
+          "x": 500,
+          "y": 41.46875
+        },
+        "../相关文档/设计笔记/安装位矩形虚线.png": {
+          "x": 249,
+          "y": 31.46875
+        }
+      },
+      "manualEdges": [
+        {
+          "id": "../相关文档/设计笔记/9.75车完9.png@@../相关文档/设计笔记/安装位矩形虚线.png",
+          "source": "../相关文档/设计笔记/安装位矩形虚线.png",
+          "target": "../相关文档/设计笔记/9.75车完9.png"
+        }
+      ],
+      "nodeSize": "medium",
+      "groupNames": {}
+    },
+    {
+      "id": "canvas-1777632681181-leh63",
+      "name": "设计",
+      "placedNodes": {},
+      "manualEdges": [],
+      "nodeSize": "medium",
+      "groupNames": {}
+    }
+  ]
+}
