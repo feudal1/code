@@ -1,0 +1,199 @@
+{
+  "main": {
+    "id": "db0ef73f1b0eae35",
+    "type": "split",
+    "children": [
+      {
+        "id": "fc7891087eba3366",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "f3fc2d2531b1886d",
+            "type": "leaf",
+            "state": {
+              "type": "image",
+              "state": {
+                "file": "闭合角短边包长边.png"
+              },
+              "icon": "lucide-image",
+              "title": "闭合角短边包长边"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "bb67eac8dc2debb4",
+    "type": "split",
+    "children": [
+      {
+        "id": "28a8a7b7ab8e7ba3",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "e14201dc8b81c91a",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "文件列表"
+            }
+          },
+          {
+            "id": "68b2f0207c4e79f1",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "搜索"
+            }
+          },
+          {
+            "id": "f49cb6521bcd7aad",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "书签"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "2d589667dd434da2",
+    "type": "split",
+    "children": [
+      {
+        "id": "860a06b85cb19b1e",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "5dc6e4ccc1dc0c61",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "闭合角短边包长边.png",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "闭合角短边包长边 的反向链接列表"
+            }
+          },
+          {
+            "id": "bdc8d713ccd424c7",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "闭合角短边包长边.png",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "闭合角短边包长边 的出链列表"
+            }
+          },
+          {
+            "id": "1a20e4262e5aa6ac",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "标签"
+            }
+          },
+          {
+            "id": "6411d01800f3e005",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "添加笔记属性"
+            }
+          },
+          {
+            "id": "48ca9e4b0c41d647",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "闭合角短边包长边.png",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "闭合角短边包长边 的大纲"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:打开快速切换": false,
+      "graph:查看关系图谱": false,
+      "canvas:新建白板": false,
+      "daily-notes:打开/创建今天的日记": false,
+      "templates:插入模板": false,
+      "command-palette:打开命令面板": false,
+      "bases:新建数据库": false
+    }
+  },
+  "active": "f3fc2d2531b1886d",
+  "lastOpenFiles": [
+    "9.75车完9.png",
+    "未命名.canvas",
+    "2026-04-29.md",
+    "闭合角短边包长边.png",
+    "左右最好对称.png",
+    "小件没法磨到粗糙度1.6.png",
+    "横着排版.png",
+    "大电箱显示器太靠边难装配问题.png",
+    "处理焊接完镀白锌.png",
+    "尺寸标准大一点.png",
+    "槽位标准.png",
+    "安装位.png"
+  ]
+}

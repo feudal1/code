@@ -1,0 +1,39 @@
+# InfinityFree API 访问配置
+# 用于禁用 JavaScript 保护，允许 API 访问
+
+# 禁用 ModSecurity（如果服务器支持）
+<IfModule mod_security.c>
+    SecRuleEngine Off
+</IfModule>
+
+<IfModule mod_security2.c>
+    SecRuleEngine Off
+</IfModule>
+
+# 设置正确的 Content-Type
+<FilesMatch "\.php$">
+    <IfModule mod_headers.c>
+        Header set Content-Type "application/json; charset=utf-8"
+    </IfModule>
+</FilesMatch>
+
+# 允许跨域访问
+<IfModule mod_headers.c>
+    Header set Access-Control-Allow-Origin "*"
+    Header set Access-Control-Allow-Methods "GET, POST, OPTIONS"
+    Header set Access-Control-Allow-Headers "Content-Type"
+</IfModule>
+
+# 禁用某些安全头（可能干扰 API）
+<IfModule mod_headers.c>
+    Header unset X-Frame-Options
+</IfModule>
+
+# PHP 配置
+<IfModule mod_php.c>
+    php_value max_execution_time 300
+    php_value max_input_time 300
+    php_value memory_limit 256M
+    php_value post_max_size 50M
+    php_value upload_max_filesize 50M
+</IfModule>

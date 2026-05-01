@@ -1,0 +1,7 @@
+C:/Users/Administrator/appdata/roaming/autodesk/autocad 2014/r19.1/chs/support/acad.mnl
+D:\doc\acaddoc.lsp
+https://help.autodesk.com/view/OARX/2018/CHS/
+
+
+圆管质量计算公式
+=ROUND((PI()/4)*((C6^2)-(C6-2*D6)^2)*7.85/1000*B6/1000,2)

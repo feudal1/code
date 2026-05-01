@@ -1,0 +1,14 @@
+{
+  "profiles": {
+    "tools": {
+      "commandName": "Project",
+      "commandLineArgs": ""
+    },
+    "folder_with_subfolders_draw_divider": {
+      "commandName": "Project",
+      "commandLineArgs": "folder_with_subfolders_draw_divider"
+    }
+    
+  }
+  
+}

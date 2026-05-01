@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM 助手 - 异步消息</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .chat-container {
+            padding: 30px;
+            min-height: 400px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        .message {
+            margin-bottom: 20px;
+            display: flex;
+            align-items: flex-start;
+        }
+        
+        .message.user {
+            justify-content: flex-end;
+        }
+        
+        .message-content {
+            max-width: 70%;
+            padding: 15px 20px;
+            border-radius: 15px;
+            line-height: 1.5;
+        }
+        
+        .user .message-content {
+            background: #667eea;
+            color: white;
+            border-bottom-right-radius: 5px;
+        }
+        
+        .assistant .message-content {
+            background: #f0f0f0;
+            color: #333;
+            border-bottom-left-radius: 5px;
+        }
+        
+        .input-container {
+            padding: 20px 30px;
+            background: #f8f9fa;
+            border-top: 1px solid #e9ecef;
+        }
+        
+        .input-group {
+            display: flex;
+            gap: 10px;
+        }
+        
+        input[type="text"] {
+            flex: 1;
+            padding: 12px 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 25px;
+            font-size: 16px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+        
+        input[type="text"]:focus {
+            border-color: #667eea;
+        }
+        
+        button {
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        button:hover {
+            transform: scale(1.05);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .status-bar {
+            padding: 15px 30px;
+            background: #fff3cd;
+            color: #856404;
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .preview-image {
+            max-width: 200px;
+            max-height: 200px;
+            border-radius: 10px;
+            margin: 10px 0;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .refresh-btn {
+            background: transparent;
+            border: 2px solid white;
+            padding: 8px 15px;
+            font-size: 14px;
+        }
+        
+        .refresh-btn:hover {
+            background: rgba(255,255,255,0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 LLM 助手</h1>
+            <p>发送消息后，稍后回来查看回复</p>
+        </div>
+        
+        <div class="status-bar">
+            <span id="statusText">📡 准备就绪</span>
+            <button class="refresh-btn" onclick="checkAllStatus()">🔄 刷新状态</button>
+        </div>
+        
+        <div class="chat-container" id="chatContainer">
+            <div class="message assistant">
+                <div class="message-content">
+                    你好！我是你的智能助手。发送消息后，我会在后台处理，你可以稍后回来查看回复。
+                </div>
+            </div>
+        </div>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>发送中...</p>
+        </div>
+        
+        <div class="input-container">
+            <div id="previewContainer"></div>
+            <div class="input-group">
+                <input 
+                    type="text" 
+                    id="userInput" 
+                    placeholder="输入你的问题..." 
+                    autocomplete="off"
+                >
+                <input type="file" id="fileInput" accept="image/*" style="display: none;">
+                <button onclick="document.getElementById('fileInput').click()">📷</button>
+                <button id="sendBtn" onclick="sendMessage()">发送</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 生成或获取用户 ID
+        let userId = localStorage.getItem('userId');
+        if (!userId) {
+            userId = 'user_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('userId', userId);
+        }
+
+        let sentMessages = JSON.parse(localStorage.getItem('sentMessages') || '[]');
+
+        // 页面加载时检查所有消息状态
+        window.addEventListener('load', () => {
+            if (sentMessages.length > 0) {
+                checkAllStatus();
+            }
+        });
+
+        // 监听文件选择
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    document.getElementById('previewContainer').innerHTML = 
+                        '<img src="' + e.target.result + '" class="preview-image">';
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        async function sendMessage() {
+            const input = document.getElementById('userInput');
+            const message = input.value.trim();
+            const fileInput = document.getElementById('fileInput');
+            
+            if (!message && !fileInput.files[0]) {
+                alert('请输入消息或选择图片');
+                return;
+            }
+
+            const loading = document.getElementById('loading');
+            const sendBtn = document.getElementById('sendBtn');
+            const statusText = document.getElementById('statusText');
+
+            loading.style.display = 'block';
+            sendBtn.disabled = true;
+            statusText.textContent = '📤 正在发送消息...';
+
+            const formData = new FormData();
+            formData.append('user_id', userId);
+            formData.append('message', message);
+            if (fileInput.files[0]) {
+                formData.append('image', fileInput.files[0]);
+            }
+
+            try {
+                const response = await fetch('receive.php', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    // 添加到聊天界面
+                    addMessage(message || '[图片]', 'user');
+                    
+                    // 保存到本地存储
+                    sentMessages.push({
+                        id: result.message_id,
+                        content: message || '[图片]',
+                        time: new Date().toISOString(),
+                        status: 'pending'
+                    });
+                    localStorage.setItem('sentMessages', JSON.stringify(sentMessages));
+                    
+                    // 清空输入
+                    input.value = '';
+                    fileInput.value = '';
+                    document.getElementById('previewContainer').innerHTML = '';
+                    
+                    statusText.textContent = '✅ 消息已发送 (ID: ' + result.message_id + ')，请等待处理完成后刷新查看';
+                    
+                } else {
+                    throw new Error(result.error || '发送失败');
+                }
+            } catch (error) {
+                statusText.textContent = '❌ 发送失败：' + error.message;
+                console.error('发送错误:', error);
+            } finally {
+                loading.style.display = 'none';
+                sendBtn.disabled = false;
+            }
+        }
+
+        function addMessage(content, type) {
+            const container = document.getElementById('chatContainer');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message ' + type;
+            messageDiv.innerHTML = '<div class="message-content">' + content + '</div>';
+            container.appendChild(messageDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        async function checkAllStatus() {
+            const statusText = document.getElementById('statusText');
+            statusText.textContent = '🔄 正在刷新...';
+            
+            let completedCount = 0;
+            
+            for (let msg of sentMessages) {
+                try {
+                    const response = await fetch('check_status.php?id=' + msg.id);
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        if (result.status === 'completed' && result.response) {
+                            // 如果还没有显示过回复，则添加
+                            if (msg.status !== 'completed') {
+                                addMessage(result.response, 'assistant');
+                                msg.status = 'completed';
+                                completedCount++;
+                            }
+                        } else if (result.status === 'processing') {
+                            msg.status = 'processing';
+                        }
+                    }
+                } catch (error) {
+                    console.error('检查状态错误:', error);
+                }
+            }
+            
+            // 保存更新后的状态
+            localStorage.setItem('sentMessages', JSON.stringify(sentMessages));
+            
+            if (completedCount > 0) {
+                statusText.textContent = '✅ 发现 ' + completedCount + ' 条新回复！';
+            } else {
+                statusText.textContent = '📊 当前状态：' + sentMessages.filter(m => m.status === 'completed').length + '/' + sentMessages.length + ' 已处理';
+            }
+        }
+
+        // 回车发送
+        document.getElementById('userInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>

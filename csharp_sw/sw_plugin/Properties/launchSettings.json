@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "配置文件 1": {
+      "commandName": "Executable",
+      "executablePath": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\SLDWORKS.exe"
+    },
+    "配置文件 2": {
+      "commandName": "Executable",
+      "executablePath": "E:\\sw\\SOLIDWORKS\\SLDWORKS.exe"
+    }
+  }
+}

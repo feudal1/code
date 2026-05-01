@@ -1,0 +1,3 @@
+
+pyinstaller --onefile keyboard_server\ipadplay_xz.py --icon=favicon.ico  --clean --noconfirm --windowed
+pyinstaller --onefile E:\code\my_python_server\start.py --icon=favicon.ico  --clean --noconfirm --windowed

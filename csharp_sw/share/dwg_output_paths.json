@@ -1,0 +1,10 @@
+{
+  "OutputRootTemplate": "钣金",
+  "FallbackRootName": "钣金",
+  "LegacyTestRootFolder": "测试",
+  "WeldmentFolder": "焊接图",
+  "CncFolder": "CNC",
+  "EngineeringFolder": "工程图",
+  "SheetMetalFolder": "下料",
+  "SusThicknessPrefix": "sus"
+}

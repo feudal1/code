@@ -1,0 +1,65 @@
+<Project Sdk="Microsoft.NET.Sdk">
+ 
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>annotations</Nullable>
+    <EnableComHosting>true</EnableComHosting>
+    <ComVisible>true</ComVisible>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <LangVersion>10.0</LangVersion>
+    <PlatformTarget>x64</PlatformTarget>
+    <OutputType>Library</OutputType>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+ 
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <Optimize>False</Optimize>
+  </PropertyGroup>
+ 
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <Optimize>False</Optimize>
+  </PropertyGroup>
+ 
+    <ItemGroup>
+      <Reference Include="accoremgd">
+        <HintPath>..\reference\accoremgd.dll</HintPath>
+        <Private>True</Private>
+        <CopyLocal>True</CopyLocal>
+      </Reference>
+      <Reference Include="Acdbmgd">
+        <HintPath>..\reference\acdbmgd.dll</HintPath>
+        <Private>True</Private>
+        <CopyLocal>True</CopyLocal>
+      </Reference>
+      <Reference Include="Acmgd">
+        <HintPath>..\reference\acmgd.dll</HintPath>
+        <Private>True</Private>
+        <CopyLocal>True</CopyLocal>
+      </Reference>
+      <Reference Include="Autodesk.AutoCAD.Interop">
+        <HintPath>..\reference\Autodesk.AutoCAD.Interop.dll</HintPath>
+      </Reference>
+      <Reference Include="Autodesk.AutoCAD.Interop.Common">
+        <HintPath>..\reference\Autodesk.AutoCAD.Interop.Common.dll</HintPath>
+      </Reference>
+    </ItemGroup>
+
+    <ItemGroup>
+      <PackageReference Include="System.Net.Http" Version="4.3.4" />
+      <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+      <PackageReference Include="System.Data.SQLite" Version="1.0.118" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <None Include="dwgmaping">
+        <Link>dwgmaping</Link>
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </None>
+      <None Include="type4_deduction_table.json">
+        <Link>type4_deduction_table.json</Link>
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </None>
+    </ItemGroup>
+ 
+</Project>

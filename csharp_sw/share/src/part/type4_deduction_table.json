@@ -1,0 +1,17 @@
+{
+  "type": 4,
+  "description": "Type=4 时按板厚查扣除 (mm)。补偿(折弯换扣除 mm) = 2*板厚 - 扣除 + 2*折弯半径。未在表中的板厚取最近项的扣除。",
+  "rows": [
+    { "thicknessMm": 1, "deductionMm": 1.7 },
+    { "thicknessMm": 1.2, "deductionMm": 2.2 },
+    { "thicknessMm": 1.4, "deductionMm": 2.5 },
+    { "thicknessMm": 1.5, "deductionMm": 2.7 },
+    { "thicknessMm": 1.8, "deductionMm": 3.0 },
+    { "thicknessMm": 2, "deductionMm": 3.4 },
+    { "thicknessMm": 2.5, "deductionMm": 4.5 },
+    { "thicknessMm": 2.75, "deductionMm": 4.6 },
+    { "thicknessMm": 3, "deductionMm": 5.2 },
+    { "thicknessMm": 3.75, "deductionMm": 6.4 },
+    { "thicknessMm": 5, "deductionMm": 8.4 }
+  ]
+}

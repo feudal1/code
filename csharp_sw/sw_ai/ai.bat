@@ -1,0 +1,1 @@
+dotnet run --project "E:\cqh\code\my_c#\ai\ai.csproj"

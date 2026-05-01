@@ -1,0 +1,60 @@
+{
+  "CreatedAt": "2026-04-30T21:13:29.3760322+08:00",
+  "NodeCount": 3,
+  "EdgeCount": 2,
+  "Nodes": [
+    {
+      "index": 0,
+      "featureName": "边线折弯1",
+      "mainCylinderAreaMm2": 1235.038611942429,
+      "innerRadiusMm": 1.5,
+      "outerRadiusMm": 4.25,
+      "firstLevelFaceAreasMm2": [
+        47357.9,
+        18770.929,
+        47357.9,
+        18770.929
+      ]
+    },
+    {
+      "index": 1,
+      "featureName": "边线折弯2",
+      "mainCylinderAreaMm2": 3004.1479749952309,
+      "innerRadiusMm": 1.5,
+      "outerRadiusMm": 4.25,
+      "firstLevelFaceAreasMm2": [
+        47357.9,
+        6425.0,
+        47357.9,
+        6425.0
+      ]
+    },
+    {
+      "index": 2,
+      "featureName": "边线折弯3",
+      "mainCylinderAreaMm2": 1051.4517912482725,
+      "innerRadiusMm": 1.5,
+      "outerRadiusMm": 4.25,
+      "firstLevelFaceAreasMm2": [
+        6425.0,
+        2145.519,
+        6425.0,
+        2145.519
+      ]
+    }
+  ],
+  "Edges": [
+    {
+      "nodeA": 0,
+      "nodeB": 1,
+      "connectedFaceAAreaMm2": 47357.9,
+      "connectedFaceBAreaMm2": 47357.9
+    },
+    {
+      "nodeA": 1,
+      "nodeB": 2,
+      "connectedFaceAAreaMm2": 6425.0,
+      "connectedFaceBAreaMm2": 6425.0
+    }
+  ]
+}

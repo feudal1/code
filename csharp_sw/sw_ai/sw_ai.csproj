@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>sw_ai</AssemblyName>
+    <RootNamespace>sw_ai</RootNamespace>
+    <LangVersion>8.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="System.Net.Http" Version="4.3.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="ChatHistoryStore.cs" />
+    <Compile Include="CommandLogStore.cs" />
+    <Compile Include="SwCommandBridgeClient.cs" />
+    <Compile Include="SwCommandMatcher.cs" />
+    <Compile Include="VlmService.cs" />
+    <Compile Include="main.cs" />
+  </ItemGroup>
+</Project>

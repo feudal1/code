@@ -1,0 +1,36 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 18
+VisualStudioVersion = 18.3.11520.95
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "cad_plugin", "cad_plugin\cad_plugin.csproj", "{006D6599-F609-4B87-9C35-026D1924AAF5}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|Any CPU = Release|Any CPU
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{006D6599-F609-4B87-9C35-026D1924AAF5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{006D6599-F609-4B87-9C35-026D1924AAF5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{006D6599-F609-4B87-9C35-026D1924AAF5}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{006D6599-F609-4B87-9C35-026D1924AAF5}.Debug|x64.Build.0 = Debug|Any CPU
+		{006D6599-F609-4B87-9C35-026D1924AAF5}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{006D6599-F609-4B87-9C35-026D1924AAF5}.Debug|x86.Build.0 = Debug|Any CPU
+		{006D6599-F609-4B87-9C35-026D1924AAF5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{006D6599-F609-4B87-9C35-026D1924AAF5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{006D6599-F609-4B87-9C35-026D1924AAF5}.Release|x64.ActiveCfg = Release|Any CPU
+		{006D6599-F609-4B87-9C35-026D1924AAF5}.Release|x64.Build.0 = Release|Any CPU
+		{006D6599-F609-4B87-9C35-026D1924AAF5}.Release|x86.ActiveCfg = Release|Any CPU
+		{006D6599-F609-4B87-9C35-026D1924AAF5}.Release|x86.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {F2A4AA8E-47AD-4F9B-BEE7-B4219F4E2A0D}
+	EndGlobalSection
+EndGlobal
