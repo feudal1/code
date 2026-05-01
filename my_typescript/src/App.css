@@ -901,7 +901,7 @@ button.primary:hover:not(:disabled) {
 
 .todo-form input[type="text"],
 .todo-form textarea,
-.todo-form input[type="file"] {
+.todo-form .todo-paste-box {
   width: 100%;
 }
 
@@ -922,6 +922,10 @@ button.primary:hover:not(:disabled) {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.todo-paste-box {
+  min-height: 56px;
 }
 
 .todo-image-preview {

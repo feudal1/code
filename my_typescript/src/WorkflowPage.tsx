@@ -15,8 +15,27 @@ import { loadState, saveState } from "./storage";
 import { parseWorkProjectsXml, serializeWorkProjectsXml } from "./xmlCodec";
 
 const PLUGIN_XML_RELATIVE = String.raw`SolidWorksAddinStudy\work_projects.xml`;
-const PLUGIN_SHARED_JSON = String.raw`SolidWorksAddinStudy\shared_work_project.json`;
 const DEFAULT_XML_FILENAME = "work_projects.xml";
+const WORKFLOW_API_URL = import.meta.env.VITE_WORKFLOW_API_URL?.trim() ?? "";
+
+type WorkflowRemotePayload = {
+  version: 1;
+  updatedAt: number;
+  selectedIndex: number;
+  addressReadMode: boolean;
+  projects: WorkProjectItem[];
+};
+
+function getWorkflowApiUrl() {
+  if (WORKFLOW_API_URL) {
+    return WORKFLOW_API_URL;
+  }
+  const chatApiUrl = import.meta.env.VITE_CHAT_API_URL?.trim() ?? "";
+  if (!chatApiUrl) {
+    return "";
+  }
+  return chatApiUrl.replace(/\/api\/chat$/i, "/api/workflow");
+}
 
 function initialLocalState(): {
   projects: WorkProjectItem[];
@@ -52,12 +71,15 @@ async function copyText(text: string): Promise<boolean> {
 
 export default function WorkflowPage() {
   const init = useMemo(() => initialLocalState(), []);
+  const remoteInitDoneRef = useRef(false);
   const [projects, setProjects] = useState<WorkProjectItem[]>(init.projects);
   const [selectedIndex, setSelectedIndex] = useState(init.selectedIndex);
   const [addressReadMode, setAddressReadMode] = useState(init.addressReadMode);
   const [newName, setNewName] = useState("");
   const [toast, setToast] = useState<string | null>(null);
+  const [remoteSyncStatus, setRemoteSyncStatus] = useState("未同步到项目文件");
   const fileRef = useRef<HTMLInputElement>(null);
+  const workflowApiUrl = getWorkflowApiUrl();
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -84,28 +106,6 @@ export default function WorkflowPage() {
     },
     [current, selectedIndex],
   );
-
-  const syncBoundAssemblyJson = useCallback(() => {
-    if (!current?.ProjectAssemblyPath?.trim()) {
-      showToast("当前项目未填写装配体路径");
-      return;
-    }
-    const json = JSON.stringify(
-      { BoundAssemblyFullPath: current.ProjectAssemblyPath.trim() },
-      null,
-      2,
-    );
-    void copyText(json).then((ok) =>
-      showToast(ok ? "已复制 shared_work_project.json 内容到剪贴板" : "复制失败"),
-    );
-  }, [current, showToast]);
-
-  const copyPluginPathsHint = useCallback(() => {
-    const hint = `%LOCALAPPDATA%\\${PLUGIN_XML_RELATIVE}\n%LOCALAPPDATA%\\${PLUGIN_SHARED_JSON}`;
-    void copyText(hint).then((ok) =>
-      showToast(ok ? "已复制插件数据文件路径说明" : "复制失败"),
-    );
-  }, [showToast]);
 
   const addProject = () => {
     const name = newName.trim();
@@ -175,21 +175,6 @@ export default function WorkflowPage() {
     }
   };
 
-  const pasteAsmFromClipboard = async () => {
-    if (!current) return;
-    try {
-      const t = (await navigator.clipboard.readText()).trim();
-      if (!t) {
-        showToast("剪贴板为空");
-        return;
-      }
-      patchCurrent({ ProjectAssemblyPath: t });
-      showToast("已写入装配体路径");
-    } catch {
-      showToast("无法读取剪贴板（需浏览器权限）");
-    }
-  };
-
   const handlePathActivate = (
     field: keyof WorkProjectItem,
     pathKind: "file" | "folder",
@@ -221,6 +206,111 @@ export default function WorkflowPage() {
         ? "地址模式: 读取（点击地址框可复制路径）"
         : "地址模式: 写入（点击地址框查看填写说明）";
 
+  function buildRemotePayload(): WorkflowRemotePayload {
+    return {
+      version: 1,
+      updatedAt: Date.now(),
+      selectedIndex,
+      addressReadMode,
+      projects,
+    };
+  }
+
+  async function saveToProjectFile(options?: { silent?: boolean }) {
+    const silent = options?.silent ?? false;
+    if (!workflowApiUrl) {
+      if (!silent) {
+        setRemoteSyncStatus("未配置流程接口地址");
+      }
+      return;
+    }
+    try {
+      const payload = buildRemotePayload();
+      const res = await fetch(workflowApiUrl, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const text = await res.text();
+      if (!res.ok) {
+        throw new Error(text || `HTTP ${res.status}`);
+      }
+      setRemoteSyncStatus(
+        silent
+          ? `已自动同步（${new Date().toLocaleTimeString()}）`
+          : `已保存到项目文件（${new Date().toLocaleTimeString()}）`,
+      );
+    } catch (error) {
+      if (!silent) {
+        setRemoteSyncStatus(`保存失败：${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
+  async function loadFromProjectFile(options?: { silent?: boolean }) {
+    const silent = options?.silent ?? false;
+    if (!workflowApiUrl) {
+      if (!silent) {
+        setRemoteSyncStatus("未配置流程接口地址");
+      }
+      return;
+    }
+    try {
+      const res = await fetch(workflowApiUrl);
+      const text = await res.text();
+      if (!res.ok) {
+        throw new Error(text || `HTTP ${res.status}`);
+      }
+      const payload = JSON.parse(text) as WorkflowRemotePayload;
+      const list = Array.isArray(payload.projects) ? payload.projects : [];
+      const nextSelectedIndex =
+        typeof payload.selectedIndex === "number" ? payload.selectedIndex : -1;
+      setProjects(list);
+      setSelectedIndex(
+        list.length === 0
+          ? -1
+          : nextSelectedIndex < 0 || nextSelectedIndex >= list.length
+            ? 0
+            : nextSelectedIndex,
+      );
+      setAddressReadMode(Boolean(payload.addressReadMode));
+      setRemoteSyncStatus(
+        silent
+          ? `已自动加载项目文件（${new Date().toLocaleTimeString()}）`
+          : `已从项目文件加载（${new Date().toLocaleTimeString()}）`,
+      );
+    } catch (error) {
+      if (!silent) {
+        setRemoteSyncStatus(`加载失败：${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    async function initRemote() {
+      if (!workflowApiUrl) {
+        remoteInitDoneRef.current = true;
+        return;
+      }
+      await loadFromProjectFile({ silent: true });
+      if (!cancelled) {
+        remoteInitDoneRef.current = true;
+      }
+    }
+    void initRemote();
+    return () => {
+      cancelled = true;
+    };
+  }, [workflowApiUrl]);
+
+  useEffect(() => {
+    if (!workflowApiUrl || !remoteInitDoneRef.current) {
+      return;
+    }
+    void saveToProjectFile({ silent: true });
+  }, [projects, selectedIndex, addressReadMode, workflowApiUrl]);
+
   return (
     <div className="workflow-shell">
       <header className="header-panel workflow-toolbar">
@@ -249,13 +339,8 @@ export default function WorkflowPage() {
         <button type="button" onClick={exportXml}>
           导出 {DEFAULT_XML_FILENAME}
         </button>
-        <button type="button" onClick={copyPluginPathsHint}>
-          复制插件数据路径
-        </button>
-        <button type="button" onClick={syncBoundAssemblyJson}>
-          复制绑定 JSON
-        </button>
         <span className="toolbar-muted">{statusRight}</span>
+        <span className="toolbar-muted">{remoteSyncStatus}</span>
         <input
           ref={fileRef}
           className="hidden-input"
@@ -287,31 +372,6 @@ export default function WorkflowPage() {
 
         <section className="detail-panel">
           <div className="asm-toolbar">
-            <strong style={{ marginRight: 8 }}>项目装配体</strong>
-            <input
-              type="text"
-              placeholder="装配体 .sldasm 完整路径"
-              value={current?.ProjectAssemblyPath ?? ""}
-              disabled={!current}
-              onChange={(e) =>
-                current && patchCurrent({ ProjectAssemblyPath: e.target.value })
-              }
-            />
-            <button type="button" disabled={!current} onClick={pasteAsmFromClipboard}>
-              从剪贴板写入路径
-            </button>
-            <button
-              type="button"
-              disabled={!current || !current.ProjectAssemblyPath.trim()}
-              onClick={() => {
-                const p = current!.ProjectAssemblyPath.trim();
-                void copyText(p).then((ok) =>
-                  showToast(ok ? "已复制装配体路径" : "复制失败"),
-                );
-              }}
-            >
-              复制路径
-            </button>
             <button
               type="button"
               onClick={() => {
@@ -326,8 +386,7 @@ export default function WorkflowPage() {
             <p className="toolbar-muted" style={{ marginTop: 0 }}>
               与 SolidWorks 插件共用数据：将导出的 <code>{DEFAULT_XML_FILENAME}</code>{" "}
               放到 <code>%LOCALAPPDATA%\{PLUGIN_XML_RELATIVE}</code>
-              （可先备份原文件）。「复制绑定 JSON」对应插件的 shared_work_project.json。
-              列表数据会默认保存在浏览器本地。
+              （可先备份原文件）。列表数据会自动读取项目文件并实时保存。
             </p>
             {CATEGORIES.map((cat) => {
               const pathKey = cat.pathFields.path;
