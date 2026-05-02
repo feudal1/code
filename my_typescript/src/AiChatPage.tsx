@@ -8,6 +8,14 @@ export interface ChatMessage {
 }
 
 const STORAGE_KEY = "work_project_ai_chat_v1";
+const CHAT_HISTORY_API_URL = import.meta.env.VITE_CHAT_HISTORY_API_URL?.trim() ?? "";
+const AUTO_SYNC_DEBOUNCE_MS = 1000;
+
+type ChatHistoryPayload = {
+  version: 1;
+  updatedAt: number;
+  messages: ChatMessage[];
+};
 
 function loadMessages(): ChatMessage[] {
   try {
@@ -35,6 +43,16 @@ function saveMessages(messages: ChatMessage[]): void {
   } catch {
     // ignore
   }
+}
+
+function getChatHistoryApiUrl(): string {
+  if (CHAT_HISTORY_API_URL) {
+    return CHAT_HISTORY_API_URL;
+  }
+  if (!CHAT_API_URL) {
+    return "";
+  }
+  return CHAT_API_URL.replace(/\/api\/chat$/i, "/api/chat-history");
 }
 
 const CHAT_API_URL = import.meta.env.VITE_CHAT_API_URL?.trim() ?? "";
@@ -96,11 +114,90 @@ export default function AiChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>(() => loadMessages());
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [remoteStatus, setRemoteStatus] = useState("未连接项目级存储");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const chatHistoryApiUrl = getChatHistoryApiUrl();
 
   useEffect(() => {
     saveMessages(messages);
   }, [messages]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadRemoteMessages() {
+      if (!chatHistoryApiUrl) {
+        setRemoteStatus("未配置对话历史接口（仅本地缓存）");
+        return;
+      }
+      try {
+        const res = await fetch(chatHistoryApiUrl);
+        const text = await res.text();
+        if (!res.ok) {
+          throw new Error(text || `HTTP ${res.status}`);
+        }
+        const payload = JSON.parse(text) as ChatHistoryPayload;
+        if (!Array.isArray(payload.messages)) {
+          throw new Error("返回数据格式无效");
+        }
+        const safeMessages = payload.messages.filter(
+          (m): m is ChatMessage =>
+            m &&
+            typeof m === "object" &&
+            typeof (m as ChatMessage).id === "string" &&
+            ((m as ChatMessage).role === "user" || (m as ChatMessage).role === "assistant") &&
+            typeof (m as ChatMessage).content === "string",
+        );
+        if (cancelled) {
+          return;
+        }
+        setMessages((prev) => {
+          if (safeMessages.length === 0 && prev.length > 0) {
+            return prev;
+          }
+          return safeMessages;
+        });
+        setRemoteStatus(`已从项目文件加载（${new Date().toLocaleTimeString()}）`);
+      } catch (error) {
+        if (!cancelled) {
+          setRemoteStatus(`对话历史加载失败：${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+    }
+    void loadRemoteMessages();
+    return () => {
+      cancelled = true;
+    };
+  }, [chatHistoryApiUrl]);
+
+  useEffect(() => {
+    if (!chatHistoryApiUrl) {
+      return;
+    }
+    const timer = window.setTimeout(async () => {
+      try {
+        const payload: ChatHistoryPayload = {
+          version: 1,
+          updatedAt: Date.now(),
+          messages,
+        };
+        const res = await fetch(chatHistoryApiUrl, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const text = await res.text();
+        if (!res.ok) {
+          throw new Error(text || `HTTP ${res.status}`);
+        }
+        setRemoteStatus(`已同步到项目文件（${new Date().toLocaleTimeString()}）`);
+      } catch (error) {
+        setRemoteStatus(`对话历史同步失败：${error instanceof Error ? error.message : String(error)}`);
+      }
+    }, AUTO_SYNC_DEBOUNCE_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [messages, chatHistoryApiUrl]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -167,6 +264,8 @@ export default function AiChatPage() {
           {CHAT_API_URL
             ? ` 已配置后端：${CHAT_API_URL}`
             : " 未配置 VITE_CHAT_API_URL 时使用占位回复；密钥请放服务端。"}
+          {" "}
+          {remoteStatus}
         </p>
         <button type="button" className="chat-clear" onClick={clearChat} disabled={!messages.length}>
           清空对话

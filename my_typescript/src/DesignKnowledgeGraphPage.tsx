@@ -31,6 +31,8 @@ type GraphCachePayload = {
   activeCanvasId: string;
   selectedId: string | null;
   canvases: CanvasData[];
+  /** 每个素材最多可放置到多少个画布（同一画布仍只能放一份）；缺省为 1 */
+  assetUseLimits?: Record<string, number>;
 };
 
 const STORAGE_KEY = "design-note-canvas-cache-v1";
@@ -78,6 +80,41 @@ function buildEdgeId(source: string, target: string) {
   return source < target ? `${source}@@${target}` : `${target}@@${source}`;
 }
 
+const ASSET_USE_LIMIT_MIN = 1;
+const ASSET_USE_LIMIT_MAX = 99;
+
+function countAssetPlacements(allCanvases: CanvasData[], assetId: string) {
+  return allCanvases.reduce((n, c) => n + (c.placedNodes[assetId] ? 1 : 0), 0);
+}
+
+function getAssetUseLimit(limits: Record<string, number>, assetId: string) {
+  const v = limits[assetId];
+  if (typeof v !== "number" || !Number.isFinite(v)) {
+    return ASSET_USE_LIMIT_MIN;
+  }
+  return Math.min(ASSET_USE_LIMIT_MAX, Math.max(ASSET_USE_LIMIT_MIN, Math.floor(v)));
+}
+
+function sanitizeAssetUseLimits(
+  raw: unknown,
+  nodeIdSet: Set<string>,
+): Record<string, number> {
+  if (!raw || typeof raw !== "object") {
+    return {};
+  }
+  const next: Record<string, number> = {};
+  for (const [id, val] of Object.entries(raw as Record<string, unknown>)) {
+    if (!nodeIdSet.has(id) || typeof val !== "number" || !Number.isFinite(val)) {
+      continue;
+    }
+    const n = Math.floor(val);
+    if (n >= ASSET_USE_LIMIT_MIN && n <= ASSET_USE_LIMIT_MAX) {
+      next[id] = n;
+    }
+  }
+  return next;
+}
+
 function isValidEdge(edge: ManualEdge, nodeIdSet: Set<string>) {
   return nodeIdSet.has(edge.source) && nodeIdSet.has(edge.target) && edge.source !== edge.target;
 }
@@ -123,6 +160,7 @@ export default function DesignKnowledgeGraphPage() {
   const [draggingNode, setDraggingNode] = useState<{ id: string; offsetX: number; offsetY: number } | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const [remoteSyncStatus, setRemoteSyncStatus] = useState("未同步到项目文件");
+  const [assetUseLimits, setAssetUseLimits] = useState<Record<string, number>>({});
 
   useEffect(() => {
     const nodeIdSet = new Set(nodes.map((item) => item.id));
@@ -130,6 +168,7 @@ export default function DesignKnowledgeGraphPage() {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as GraphCachePayload;
+        setAssetUseLimits(sanitizeAssetUseLimits(parsed.assetUseLimits, nodeIdSet));
         const safeCanvases = (parsed.canvases ?? [])
           .map((item) => ({
             ...item,
@@ -161,6 +200,7 @@ export default function DesignKnowledgeGraphPage() {
 
       const legacyCanvasRaw = localStorage.getItem(LEGACY_CANVAS_LIST_KEY);
       if (legacyCanvasRaw) {
+        setAssetUseLimits({});
         const parsed = JSON.parse(legacyCanvasRaw) as CanvasData[];
         const safeCanvases = parsed
           .map((item) => ({
@@ -188,6 +228,7 @@ export default function DesignKnowledgeGraphPage() {
         }
       }
 
+      setAssetUseLimits({});
       const legacyEdgesRaw = localStorage.getItem(LEGACY_EDGE_KEY);
       const legacyPlacedRaw = localStorage.getItem(LEGACY_PLACED_KEY);
       const legacySizeRaw = localStorage.getItem(STORAGE_SIZE_KEY);
@@ -208,6 +249,7 @@ export default function DesignKnowledgeGraphPage() {
       setActiveCanvasId(first.id);
       setLastSyncedAt(Date.now());
     } catch {
+      setAssetUseLimits({});
       const first = createCanvas("默认画布");
       setCanvases([first]);
       setActiveCanvasId(first.id);
@@ -223,11 +265,12 @@ export default function DesignKnowledgeGraphPage() {
         activeCanvasId,
         selectedId,
         canvases,
+        assetUseLimits,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
       setLastSyncedAt(payload.updatedAt);
     }
-  }, [canvases, activeCanvasId, selectedId]);
+  }, [canvases, activeCanvasId, selectedId, assetUseLimits]);
 
   const activeCanvas = useMemo(
     () => canvases.find((item) => item.id === activeCanvasId) ?? canvases[0] ?? null,
@@ -465,10 +508,9 @@ export default function DesignKnowledgeGraphPage() {
     if (placedNodes[nodeId]) {
       return;
     }
-    const usedByOtherCanvas = canvases.some(
-      (canvas) => canvas.id !== activeCanvasId && Boolean(canvas.placedNodes[nodeId]),
-    );
-    if (usedByOtherCanvas) {
+    const placedCount = countAssetPlacements(canvases, nodeId);
+    const limit = getAssetUseLimit(assetUseLimits, nodeId);
+    if (placedCount >= limit) {
       return;
     }
     const { width: nodeWidth, height: nodeHeight } = getNodeDimensions();
@@ -582,7 +624,22 @@ export default function DesignKnowledgeGraphPage() {
       activeCanvasId,
       selectedId,
       canvases,
+      assetUseLimits,
     };
+  }
+
+  function bumpAssetUseLimit(assetId: string, delta: number) {
+    const nodeIdSet = new Set(nodes.map((item) => item.id));
+    if (!nodeIdSet.has(assetId)) {
+      return;
+    }
+    const used = countAssetPlacements(canvases, assetId);
+    const current = getAssetUseLimit(assetUseLimits, assetId);
+    const nextVal = Math.min(
+      ASSET_USE_LIMIT_MAX,
+      Math.max(ASSET_USE_LIMIT_MIN, Math.max(used, current + delta)),
+    );
+    setAssetUseLimits((prev) => ({ ...prev, [assetId]: nextVal }));
   }
 
   async function saveToProjectFile(options?: { silent?: boolean }) {
@@ -632,6 +689,7 @@ export default function DesignKnowledgeGraphPage() {
       }
       const payload = JSON.parse(text) as GraphCachePayload;
       const nodeIdSet = new Set(nodes.map((item) => item.id));
+      setAssetUseLimits(sanitizeAssetUseLimits(payload.assetUseLimits, nodeIdSet));
       const safeCanvases = (payload.canvases ?? [])
         .map((item) => ({
           ...item,
@@ -703,7 +761,7 @@ export default function DesignKnowledgeGraphPage() {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [canvases, activeCanvasId, selectedId, graphApiUrl]);
+  }, [canvases, activeCanvasId, selectedId, assetUseLimits, graphApiUrl]);
 
   if (!activeCanvas) {
     return null;
@@ -716,10 +774,12 @@ export default function DesignKnowledgeGraphPage() {
         <ul className="graph-note-list">
           {nodes.map((item) => (
             (() => {
-              const usedCanvas = canvases.find((canvas) => Boolean(canvas.placedNodes[item.id]));
-              const usedByCurrentCanvas = usedCanvas?.id === activeCanvasId;
-              const usedByOtherCanvas = Boolean(usedCanvas) && !usedByCurrentCanvas;
-              const isUsedAnywhere = Boolean(usedCanvas);
+              const placedCount = countAssetPlacements(canvases, item.id);
+              const limit = getAssetUseLimit(assetUseLimits, item.id);
+              const usedByCurrentCanvas = Boolean(placedNodes[item.id]);
+              const usedByOtherCanvas = placedCount > 0 && !usedByCurrentCanvas;
+              const quotaFull = placedCount >= limit;
+              const canDragFromList = !usedByCurrentCanvas && !quotaFull;
               const isSelected = item.id === selectedId;
               return (
             <li
@@ -728,7 +788,7 @@ export default function DesignKnowledgeGraphPage() {
                 noteItemRefs.current[item.id] = el;
               }}
               className={
-                isUsedAnywhere
+                quotaFull
                   ? isSelected
                     ? "active graph-note-item--used"
                     : "graph-note-item--used"
@@ -737,21 +797,53 @@ export default function DesignKnowledgeGraphPage() {
                     : ""
               }
               onClick={() => setSelectedId(item.id)}
-              draggable={!isUsedAnywhere}
+              draggable={canDragFromList}
               onDragStart={(event) => {
-                if (isUsedAnywhere) {
+                if (!canDragFromList) {
                   event.preventDefault();
                   return;
                 }
                 onDragStart(item.id, event);
               }}
-              aria-disabled={isUsedAnywhere}
+              aria-disabled={!canDragFromList}
             >
-              <div className="graph-note-title">
-                [{item.kind.toUpperCase()}] {item.title}
+              <div className="graph-note-title-row">
+                <div className="graph-note-title">
+                  [{item.kind.toUpperCase()}] {item.title}
+                </div>
+                <div
+                  className="graph-note-limit-controls"
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  role="group"
+                  aria-label="素材使用次数限额"
+                >
+                  <span className="toolbar-muted graph-note-limit-label">限额</span>
+                  <button
+                    type="button"
+                    className="graph-note-limit-btn"
+                    onClick={() => bumpAssetUseLimit(item.id, -1)}
+                    disabled={limit <= Math.max(ASSET_USE_LIMIT_MIN, placedCount)}
+                    aria-label="减少可用次数"
+                  >
+                    −
+                  </button>
+                  <span className="graph-note-limit-value" title="已用画布数 / 可用总次数">
+                    {placedCount}/{limit}
+                  </span>
+                  <button
+                    type="button"
+                    className="graph-note-limit-btn"
+                    onClick={() => bumpAssetUseLimit(item.id, 1)}
+                    disabled={limit >= ASSET_USE_LIMIT_MAX}
+                    aria-label="增加可用次数"
+                  >
+                    +
+                  </button>
+                </div>
               </div>
               {usedByCurrentCanvas ? <div className="toolbar-muted">已在当前画布使用</div> : null}
-              {usedByOtherCanvas ? <div className="toolbar-muted">已在其他画布使用</div> : null}
+              {usedByOtherCanvas ? <div className="toolbar-muted">已在其他画布使用（仍可拖到未使用的画布）</div> : null}
               {isSelected ? (
                 <div className="graph-note-inline-detail">
                   <h4>{item.title}</h4>

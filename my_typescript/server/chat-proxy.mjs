@@ -15,6 +15,9 @@ const DEEPSEEK_BASE_URL = (
 const DEEPSEEK_MODEL = (process.env.DEEPSEEK_MODEL || "deepseek-chat").trim();
 const ALLOW_ORIGIN = (process.env.ALLOW_ORIGIN || "*").trim();
 const GRAPH_FILE_PATH = path.resolve(process.cwd(), "相关文档/设计笔记/graph-cache.json");
+const TODO_FILE_PATH = path.resolve(process.cwd(), "相关文档/设计笔记/todo-cache.json");
+const CHAT_HISTORY_FILE_PATH = path.resolve(process.cwd(), "相关文档/设计笔记/chat-history-cache.json");
+const WORKFLOW_FILE_PATH = path.resolve(process.cwd(), "相关文档/设计笔记/workflow-cache.json");
 
 function json(res, statusCode, body) {
   res.writeHead(statusCode, {
@@ -38,6 +41,18 @@ function text(res, statusCode, body) {
 
 async function ensureGraphDir() {
   await fs.mkdir(path.dirname(GRAPH_FILE_PATH), { recursive: true });
+}
+
+async function ensureTodoDir() {
+  await fs.mkdir(path.dirname(TODO_FILE_PATH), { recursive: true });
+}
+
+async function ensureChatHistoryDir() {
+  await fs.mkdir(path.dirname(CHAT_HISTORY_FILE_PATH), { recursive: true });
+}
+
+async function ensureWorkflowDir() {
+  await fs.mkdir(path.dirname(WORKFLOW_FILE_PATH), { recursive: true });
 }
 
 function readJsonBody(req) {
@@ -111,6 +126,113 @@ const server = createServer(async (req, res) => {
         "utf8",
       );
       json(res, 200, { ok: true, path: GRAPH_FILE_PATH });
+    } catch (err) {
+      text(res, 500, err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/api/todo") {
+    try {
+      const content = await fs.readFile(TODO_FILE_PATH, "utf8");
+      const parsed = content ? JSON.parse(content) : {};
+      json(res, 200, parsed);
+    } catch (err) {
+      if (err && typeof err === "object" && "code" in err && err.code === "ENOENT") {
+        json(res, 200, {
+          version: 1,
+          updatedAt: Date.now(),
+          tasks: [],
+        });
+        return;
+      }
+      text(res, 500, err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  if (req.method === "PUT" && req.url === "/api/todo") {
+    try {
+      const body = await readJsonBody(req);
+      await ensureTodoDir();
+      await fs.writeFile(
+        TODO_FILE_PATH,
+        `${JSON.stringify(body, null, 2)}\n`,
+        "utf8",
+      );
+      json(res, 200, { ok: true, path: TODO_FILE_PATH });
+    } catch (err) {
+      text(res, 500, err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/api/chat-history") {
+    try {
+      const content = await fs.readFile(CHAT_HISTORY_FILE_PATH, "utf8");
+      const parsed = content ? JSON.parse(content) : {};
+      json(res, 200, parsed);
+    } catch (err) {
+      if (err && typeof err === "object" && "code" in err && err.code === "ENOENT") {
+        json(res, 200, {
+          version: 1,
+          updatedAt: Date.now(),
+          messages: [],
+        });
+        return;
+      }
+      text(res, 500, err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  if (req.method === "PUT" && req.url === "/api/chat-history") {
+    try {
+      const body = await readJsonBody(req);
+      await ensureChatHistoryDir();
+      await fs.writeFile(
+        CHAT_HISTORY_FILE_PATH,
+        `${JSON.stringify(body, null, 2)}\n`,
+        "utf8",
+      );
+      json(res, 200, { ok: true, path: CHAT_HISTORY_FILE_PATH });
+    } catch (err) {
+      text(res, 500, err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/api/workflow") {
+    try {
+      const content = await fs.readFile(WORKFLOW_FILE_PATH, "utf8");
+      const parsed = content ? JSON.parse(content) : {};
+      json(res, 200, parsed);
+    } catch (err) {
+      if (err && typeof err === "object" && "code" in err && err.code === "ENOENT") {
+        json(res, 200, {
+          version: 1,
+          updatedAt: Date.now(),
+          selectedIndex: -1,
+          addressReadMode: false,
+          projects: [],
+        });
+        return;
+      }
+      text(res, 500, err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  if (req.method === "PUT" && req.url === "/api/workflow") {
+    try {
+      const body = await readJsonBody(req);
+      await ensureWorkflowDir();
+      await fs.writeFile(
+        WORKFLOW_FILE_PATH,
+        `${JSON.stringify(body, null, 2)}\n`,
+        "utf8",
+      );
+      json(res, 200, { ok: true, path: WORKFLOW_FILE_PATH });
     } catch (err) {
       text(res, 500, err instanceof Error ? err.message : String(err));
     }
