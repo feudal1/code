@@ -200,6 +200,44 @@ namespace SolidWorksAddinStudy
           return ExecuteContextMenuCommand("check_k_factor");
       }
 
+      public string fix_bends_kcheck_menu()
+      {
+          return ExecuteContextMenuCommand("fix_bends_kcheck_menu");
+      }
+
+      [SolidWorksAddinStudy.Command(2007, "实体修正折弯K", "默认可按板厚折弯扣除(Type4)，并按 K 检查规则修正折弯（按 body）", "fix_bends_kcheck_menu", (int)swDocumentTypes_e.swDocPART, (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true, Source = CommandSource.ContextMenu)]
+      private string FixBendsKcheckFromContextMenu()
+      {
+          try
+          {
+              if (swApp == null)
+              {
+                  return "SolidWorks 未初始化";
+              }
+
+              if (!TryGetTargetPartFromContextSelection(out var swModel) || swModel == null)
+              {
+                  Console.WriteLine("请先选中一个对象（面/实体/组件）");
+                  return "未选中有效对象";
+              }
+
+              if (swModel.GetType() != (int)swDocumentTypes_e.swDocPART)
+              {
+                  return "请在零件文档中使用";
+              }
+
+              var stats = fix_bends_kcheck.Run(swApp, swModel);
+              return stats.Errors > 0
+                  ? $"修正完成但有 {stats.Errors} 处失败，见输出窗口"
+                  : $"修正完成：钣金默认 {stats.SheetMetalFeaturesUpdated}，折弯 {stats.BendsUpdated}";
+          }
+          catch (Exception ex)
+          {
+              Console.WriteLine($"fix_bends_kcheck: 失败 — {ex.Message}");
+              return ex.Message;
+          }
+      }
+
       [SolidWorksAddinStudy.Command(2003, "实体检查K因子", "检查当前选中实体的K因子", "check_k_factor", (int)swDocumentTypes_e.swDocPART, (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true, Source = CommandSource.ContextMenu)]
       private string CheckKFactorCore()
       {
@@ -635,6 +673,7 @@ namespace SolidWorksAddinStudy
                 RegisterContextMenuForCommonSelections("new_drw_cnc", "new_drw_cnc_menu");
                 RegisterContextMenuForCommonSelections("export_step", "export_selected_to_step");
                 RegisterContextMenuForCommonSelections("check_k_factor", "check_k_factor");
+                RegisterContextMenuForCommonSelections("修正折弯K", "fix_bends_kcheck_menu");
                 RegisterContextMenuForCommonSelections("modify_equations", "modify_equations");
                 RegisterContextMenuForCommonSelections("标注当前零件为方管", "mark_square_tube");
 

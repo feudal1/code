@@ -101,30 +101,34 @@ export default function TodoTaskPage() {
             value={title}
             onChange={(event) => setTitle(event.target.value)}
           />
-          <textarea
-            placeholder="任务说明（可选）"
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-          />
-
-          <div className="todo-image-row">
-            <label htmlFor="todo-image-input">任务图片：</label>
-            <input
-              id="todo-image-input"
-              type="file"
-              accept="image/*"
-              onChange={handleImageChange}
+          <div className="todo-detail-box">
+            <div className="todo-detail-box-caption">任务说明与图片（可选）</div>
+            <textarea
+              placeholder="在此填写文字说明…"
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              rows={4}
             />
-            {imageName ? (
-              <span className="toolbar-muted">已选择：{imageName}</span>
-            ) : (
-              <span className="toolbar-muted">未选择图片</span>
-            )}
+            <div className="todo-detail-box-media">
+              <div className="todo-image-row">
+                <label htmlFor="todo-image-input">添加图片：</label>
+                <input
+                  id="todo-image-input"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageChange}
+                />
+                {imageName ? (
+                  <span className="toolbar-muted">已选择：{imageName}</span>
+                ) : (
+                  <span className="toolbar-muted">未选择则仅保存文字说明</span>
+                )}
+              </div>
+              {imageDataUrl ? (
+                <img className="todo-image-preview" src={imageDataUrl} alt="任务图片预览" />
+              ) : null}
+            </div>
           </div>
-
-          {imageDataUrl ? (
-            <img className="todo-image-preview" src={imageDataUrl} alt="任务图片预览" />
-          ) : null}
 
           <button className="primary" type="submit" disabled={!title.trim() || isReadingImage}>
             {isReadingImage ? "读取图片中..." : "新建任务"}
@@ -152,10 +156,13 @@ export default function TodoTaskPage() {
                   <span>{task.title}</span>
                 </label>
 
-                {task.note ? <p className="todo-item-note">{task.note}</p> : null}
-
-                {task.imageDataUrl ? (
-                  <img className="todo-item-image" src={task.imageDataUrl} alt={task.title} />
+                {task.note || task.imageDataUrl ? (
+                  <div className="todo-item-detail-box">
+                    {task.note ? <p className="todo-item-note">{task.note}</p> : null}
+                    {task.imageDataUrl ? (
+                      <img className="todo-item-image" src={task.imageDataUrl} alt={task.title} />
+                    ) : null}
+                  </div>
                 ) : null}
 
                 <span className="toolbar-muted">

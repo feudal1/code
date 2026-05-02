@@ -438,6 +438,51 @@ using SolidWorksAddinStudy.Services;
         }
     }
 
+    [SolidWorksAddinStudy.Command(1026, "修正折弯K", "钣金默认可按板厚设为折弯扣除(Type4)，并按 K 检查规则更新各折弯（按 body）", "fix_bends_kcheck", (int)swDocumentTypes_e.swDocPART, ShowOutputWindow = true)]
+    private void FixBendsKcheck()
+    {
+        try
+        {
+            StartCancelableCommand();
+            if (swApp == null)
+            {
+                Debug.WriteLine("SolidWorks 未初始化");
+                return;
+            }
+
+            ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+            if (swModel == null)
+            {
+                Debug.WriteLine("没有打开的文档");
+                Console.WriteLine("fix_bends_kcheck: 请先打开一个零件文档");
+                return;
+            }
+
+            var stats = fix_bends_kcheck.Run(swApp, swModel);
+            if (stats.Errors > 0)
+            {
+                Console.WriteLine(
+                    $"fix_bends_kcheck: 完成但有 {stats.Errors} 处失败（详情见上文 Console 输出）。");
+            }
+            else
+            {
+                Console.WriteLine(
+                    $"fix_bends_kcheck: 完成，钣金默认更新 {stats.SheetMetalFeaturesUpdated}，折弯更新 {stats.BendsUpdated}。");
+            }
+
+            Debug.WriteLine("修正折弯K 完成");
+        }
+        catch (OperationCanceledException)
+        {
+            Console.WriteLine("fix_bends_kcheck: 命令已中止");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"修正折弯K 失败：{ex.Message}");
+            Console.WriteLine($"fix_bends_kcheck: 失败 — {ex.Message}");
+        }
+    }
+
     [SolidWorksAddinStudy.Command(1011, "导出BOM（装配体）", "导出装配体层级BOM到Excel（仅装配体项）", "export_bom_assembly", (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true)]
     private async void Asm2bom()
     {

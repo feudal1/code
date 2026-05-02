@@ -33,9 +33,24 @@ public class checkk_factor
     }
 
 
+    /// <param name="quiet">为 true 时不向控制台输出（供 fix_bends_kcheck 等静默判断）。</param>
     public static bool Process_CustomBendAllowance(string modelname, CustomBendAllowance swCustBend, double BendRadius,
-        string FeatureName, double thickness, double angle)
+        string FeatureName, double thickness, double angle, bool quiet = false)
     {
+        void KcLog(string line)
+        {
+            if (!quiet)
+            {
+                Console.WriteLine(line);
+            }
+        }
+
+        if (swCustBend == null)
+        {
+            KcLog($"k 因子错误，{modelname}+{FeatureName}，CustomBendAllowance 为空（API 未返回折弯系数）。");
+            return true;
+        }
+
         var debuct_factor = Math.Round(swCustBend.BendDeduction * 1000.0 , 2);
         var allow_factor = Math.Round( swCustBend.BendAllowance * 1000.0 , 2);
         double bendradius_limit = 6;
@@ -49,19 +64,19 @@ public class checkk_factor
             if (isTypeInvalid || isKFactorInvalid)
             {
                 string reason = isTypeInvalid ? "未使用 K 因子类型" : "K 因子不等于 0.5";
-                Console.WriteLine($"k 因子错误，{modelname}+{FeatureName},原因:{reason},当前值：Type={swCustBend.Type}, K 因子={swCustBend.KFactor}");
+                KcLog($"k 因子错误，{modelname}+{FeatureName},原因:{reason},当前值：Type={swCustBend.Type}, K 因子={swCustBend.KFactor}");
                 return true;
             }
 
             Debug.Print("      扣除倍数      = " + debuct_factor);
             Debug.Print("      补偿换扣除 = " + allow_factor);
-            Console.WriteLine($"k因子正确,{modelname}+{FeatureName}");
+            KcLog($"k因子正确,{modelname}+{FeatureName}");
             return false;
         }
 
         else if (Math.Abs(angle - 90) > 0.5 && Math.Abs(swCustBend.KFactor - 0.35) > 0.05)
         {
-            Console.WriteLine($"非 90 度折弯，k 因子错误，{modelname}+{FeatureName},触发条件：角度≠90°且 K 因子≠0.35,当前值：角度={angle}°, K 因子={swCustBend.KFactor}");
+            KcLog($"非 90 度折弯，k 因子错误，{modelname}+{FeatureName},触发条件：角度≠90°且 K 因子≠0.35,当前值：角度={angle}°, K 因子={swCustBend.KFactor}");
             return true;
         }
 
@@ -71,20 +86,20 @@ public class checkk_factor
             const double tableTolMm = 0.2;
             if (!Type4BendTable.TryGetNearest(thickness, out var tableThickness, out var deduction))
             {
-                Console.WriteLine(
+                KcLog(
                     $"k 因子错误，{modelname}+{FeatureName}，Type=4 但无法加载扣除表 (请部署 type4_deduction_table.json 与 share.dll 同目录)。");
                 return true;
             }
 
             if (Math.Abs(debuct_factor - deduction) > tableTolMm)
             {
-                Console.WriteLine(
+                KcLog(
                     $"k 因子错误，{modelname}+{FeatureName}，Type=4 折弯扣除与表不一致：最近表列板厚 {tableThickness:F2}mm 对应扣除≈{deduction:F2}mm，当前 {debuct_factor:F2}mm");
                 return true;
             }
 
             Debug.Print("      扣除(表)     = " + deduction);
-            Console.WriteLine($"k因子正确,{modelname}+{FeatureName}");
+            KcLog($"k因子正确,{modelname}+{FeatureName}");
             return false;
         }
 
@@ -95,7 +110,7 @@ public class checkk_factor
             const double tableTolMm = 0.2;
             if (!Type4BendTable.TryGetNearest(thickness, out var tableThickness, out var deduction))
             {
-                Console.WriteLine(
+                KcLog(
                     $"k 因子错误，{modelname}+{FeatureName}，Type=3 但无法加载扣除表 (请部署 type4_deduction_table.json 与 share.dll 同目录)。");
                 return true;
             }
@@ -103,19 +118,19 @@ public class checkk_factor
             double expectAllow = 2.0 * thickness - deduction + 2.0 * BendRadius;
             if (Math.Abs(allow_factor - expectAllow) > tableTolMm)
             {
-                Console.WriteLine(
+                KcLog(
                     $"k 因子错误，{modelname}+{FeatureName}，Type=3 补偿与公式不一致：最近表列板厚 {tableThickness:F2}mm，补偿≈2×{thickness:F2}-{deduction:F2}+2×{BendRadius:F2}={expectAllow:F2}mm，当前 {allow_factor:F2}mm");
                 return true;
             }
 
             Debug.Print("      扣除(表)     = " + deduction);
             Debug.Print("      补偿(公式)  = " + expectAllow);
-            Console.WriteLine($"k因子正确,{modelname}+{FeatureName}");
+            KcLog($"k因子正确,{modelname}+{FeatureName}");
             return false;
         }
         else if (BendRadius < bendradius_limit && swCustBend.Type == 2 && Math.Abs(swCustBend.KFactor - 0.35) > 0.05)
         {
-            Console.WriteLine($"k 因子错误，{modelname}+{FeatureName},触发条件：R<{BendRadius}mm 且 Type=2 且 K 因子超出范围 [0.3-0.4],当前值：{swCustBend.KFactor}");
+            KcLog($"k 因子错误，{modelname}+{FeatureName},触发条件：R<{BendRadius}mm 且 Type=2 且 K 因子超出范围 [0.3-0.4],当前值：{swCustBend.KFactor}");
             return true;
         }
 
@@ -127,21 +142,27 @@ public class checkk_factor
             Debug.Print("      扣除倍数      = " + debuct_factor);
             Debug.Print("      补偿换扣除 = " + allow_factor);
         
-            Console.WriteLine($"k因子正确,{modelname}+{FeatureName}");
+            KcLog($"k因子正确,{modelname}+{FeatureName}");
             return false;
         }
     }
 
     public static void PrintBendDebug(CustomBendAllowance swCustBend, double thickness, double bendRadius, double angle)
     {
-        Debug.Print("      BendAllowance    = " + swCustBend.BendAllowance * 1000.0 + " mm");
-        Debug.Print("      BendDeduction    = " + swCustBend.BendDeduction * 1000.0 + " mm");
-        Debug.Print("      BendTableFile    = " + swCustBend.BendTableFile);
-        Debug.Print("      KFactor          = " + swCustBend.KFactor);
-        Debug.Print("      Type             = " + swCustBend.Type);
-        Debug.Print("      thickness            = " + thickness);
-        Debug.Print("      Radius = " + bendRadius + " mm");
-        Debug.Print("      angle = " + angle + "°");
+        void Line(string s)
+        {
+            Console.WriteLine(s);
+            Debug.Print(s);
+        }
+
+        Line("      BendAllowance    = " + swCustBend.BendAllowance * 1000.0 + " mm");
+        Line("      BendDeduction    = " + swCustBend.BendDeduction * 1000.0 + " mm");
+        Line("      BendTableFile    = " + swCustBend.BendTableFile);
+        Line("      KFactor          = " + swCustBend.KFactor);
+        Line("      Type             = " + swCustBend.Type);
+        Line("      thickness            = " + thickness);
+        Line("      Radius = " + bendRadius + " mm");
+        Line("      angle = " + angle + "°");
     }
   
     public static bool Process_OneBend(SldWorks swApp, ModelDoc2 swModel, Feature swFeat,double  thickness)
@@ -154,14 +175,15 @@ public class checkk_factor
         swOneBend = (OneBendFeatureData)swFeat.GetDefinition();
         swCustBend = swOneBend.GetCustomBendAllowance(); 
         var angle=Math.Round(swOneBend.BendAngle* 180.0 / Math.PI,2);
-        
 
-
-        bool hasError = Process_CustomBendAllowance(swModel.GetTitle(), swCustBend, swOneBend.BendRadius * 1000.0, swFeat.Name, thickness, angle);
-        if (hasError)
+        Console.WriteLine("    +" + swFeat.Name + " [" + swFeat.GetTypeName() + "]");
+        Debug.Print("    +" + swFeat.Name + " [" + swFeat.GetTypeName() + "]");
+        if (swCustBend != null)
         {
             PrintBendDebug(swCustBend, thickness, swOneBend.BendRadius * 1000.0, angle);
         }
+
+        bool hasError = Process_CustomBendAllowance(swModel.GetTitle(), swCustBend, swOneBend.BendRadius * 1000.0, swFeat.Name, thickness, angle);
         return hasError;
 
     }
@@ -239,23 +261,34 @@ public class checkk_factor
                 Feature swSubFeat = (Feature)swFeature.GetFirstSubFeature();
                 while (swSubFeat != null)
                 {
-                    // 只处理 OneBend 特征
-                    if (swSubFeat.GetTypeName() == "OneBend")
+                    // 与 fix_bends_kcheck 一致：用 GetDefinition 是否为 OneBendFeatureData 识别折弯，不依赖类型名。
+                    try
                     {
-                        bendCount++;
-                        try
+                        if (swSubFeat.GetDefinition() is not OneBendFeatureData)
                         {
-                            bool hasError = Process_OneBend(swApp, swModel, swSubFeat, thickness);
-                            if (hasError)
-                            {
-                                errorCount++;
-                            }
+                            swSubFeat = (Feature)swSubFeat.GetNextSubFeature();
+                            continue;
                         }
-                        catch (Exception ex)
+                    }
+                    catch
+                    {
+                        swSubFeat = (Feature)swSubFeat.GetNextSubFeature();
+                        continue;
+                    }
+
+                    bendCount++;
+                    try
+                    {
+                        bool hasError = Process_OneBend(swApp, swModel, swSubFeat, thickness);
+                        if (hasError)
                         {
                             errorCount++;
-                            Console.WriteLine($"检查折弯特征 '{swSubFeat.Name}' 时出错: {ex.Message}");
                         }
+                    }
+                    catch (Exception ex)
+                    {
+                        errorCount++;
+                        Console.WriteLine($"检查折弯特征 '{swSubFeat.Name}' 时出错: {ex.Message}");
                     }
                     
                     swSubFeat = (Feature)swSubFeat.GetNextSubFeature();

@@ -47,12 +47,16 @@
     {
       "nodeA": 0,
       "nodeB": 1,
+      "featureNameA": "边线折弯1",
+      "featureNameB": "边线折弯2",
       "connectedFaceAAreaMm2": 47357.9,
       "connectedFaceBAreaMm2": 47357.9
     },
     {
       "nodeA": 1,
       "nodeB": 2,
+      "featureNameA": "边线折弯2",
+      "featureNameB": "边线折弯3",
       "connectedFaceAAreaMm2": 6425.0,
       "connectedFaceBAreaMm2": 6425.0
     }
