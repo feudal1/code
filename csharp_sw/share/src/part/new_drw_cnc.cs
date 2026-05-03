@@ -17,15 +17,11 @@ namespace tools
                 string fullpath= swModel .GetPathName();
                 int docType = swModel.GetType();
                 
-                // 根据文档类型生成不同的工程图路径
-                string drwpath = "";
-                if (docType == (int)swDocumentTypes_e.swDocPART)
+                // 与零件/装配体同目录、同主文件名，扩展名为 .slddrw（勿用 Replace 改扩展名：装配体会变成 .drw，大小写路径会错）
+                string drwpath;
+                if (docType == (int)swDocumentTypes_e.swDocPART || docType == (int)swDocumentTypes_e.swDocASSEMBLY)
                 {
-                    drwpath = swModel.GetPathName().Replace("prt", "PRT").Replace("PRT", "drw");
-                }
-                else if (docType == (int)swDocumentTypes_e.swDocASSEMBLY)
-                {
-                    drwpath = swModel.GetPathName().Replace("sldasm", "SLDASM").Replace("SLDASM", "drw");
+                    drwpath = Path.ChangeExtension(fullpath, ".slddrw");
                 }
                 else
                 {
