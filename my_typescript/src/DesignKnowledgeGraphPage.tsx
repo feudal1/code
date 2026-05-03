@@ -1,5 +1,11 @@
 import { jsPDF } from "jspdf";
 import { useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  persistMediumShortLabel,
+  readAppCache,
+  removeAppCache,
+  writeAppCache,
+} from "./appLocalCache";
 
 type AssetNode = {
   id: string;
@@ -155,31 +161,34 @@ function removeAssetFromGraphCachePayload(payload: GraphCachePayload, assetId: s
   }
 }
 
-function patchDesignNoteLocalStorageAfterRename(oldId: string, newId: string) {
+async function patchDesignNoteCacheAfterRename(
+  oldId: string,
+  newId: string,
+): Promise<void> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = await readAppCache(STORAGE_KEY);
     if (!raw) {
       return;
     }
     const parsed = JSON.parse(raw) as GraphCachePayload;
     remapAssetIdInGraphCachePayload(parsed, oldId, newId);
     parsed.updatedAt = Date.now();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+    await writeAppCache(STORAGE_KEY, JSON.stringify(parsed));
   } catch {
     // ignore
   }
 }
 
-function patchDesignNoteLocalStorageAfterDelete(assetId: string) {
+async function patchDesignNoteCacheAfterDelete(assetId: string): Promise<void> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = await readAppCache(STORAGE_KEY);
     if (!raw) {
       return;
     }
     const parsed = JSON.parse(raw) as GraphCachePayload;
     removeAssetFromGraphCachePayload(parsed, assetId);
     parsed.updatedAt = Date.now();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+    await writeAppCache(STORAGE_KEY, JSON.stringify(parsed));
   } catch {
     // ignore
   }
@@ -275,6 +284,116 @@ function loadImageNaturalSize(src: string): Promise<{ width: number; height: num
   });
 }
 
+const CAPTION_FONT =
+  '10px system-ui, "Segoe UI", "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif';
+
+function truncateCanvasLine(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
+  if (!text) {
+    return "";
+  }
+  if (ctx.measureText(text).width <= maxW) {
+    return text;
+  }
+  const ell = "…";
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    const candidate = text.slice(0, mid) + ell;
+    if (ctx.measureText(candidate).width <= maxW) {
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return text.slice(0, lo) + ell;
+}
+
+function wrapFilenameForCaptionCanvas(
+  ctx: CanvasRenderingContext2D,
+  fileName: string,
+  maxInnerW: number,
+  maxLines: number,
+): string[] {
+  const lines: string[] = [];
+  let remaining = fileName;
+  for (let lineIdx = 0; lineIdx < maxLines && remaining; lineIdx++) {
+    const isLast = lineIdx === maxLines - 1;
+    if (isLast) {
+      lines.push(truncateCanvasLine(ctx, remaining, maxInnerW));
+      break;
+    }
+    let line = "";
+    for (const ch of remaining) {
+      const next = line + ch;
+      if (ctx.measureText(next).width <= maxInnerW) {
+        line = next;
+      } else {
+        break;
+      }
+    }
+    if (!line) {
+      line = remaining[0] ?? "";
+      remaining = remaining.slice(1);
+    } else {
+      remaining = remaining.slice(line.length);
+    }
+    lines.push(line);
+  }
+  return lines;
+}
+
+/** 用画布生成文件名条（避免 jsPDF 内置字体无法显示中文文件名） */
+function renderFilenameCaptionPng(
+  fileName: string,
+  maxWidthMm: number,
+): { dataUrl: string; heightMm: number; widthMm: number } {
+  const logicalPxPerMm = 96 / 25.4;
+  const maxLogicalW = Math.max(32, maxWidthMm * logicalPxPerMm);
+  const fontPx = 10;
+  const lineHeight = Math.round(fontPx * 1.45);
+  const padX = 3;
+  const padY = 2;
+  const maxInnerW = Math.max(8, maxLogicalW - padX * 2);
+
+  const scratch = document.createElement("canvas");
+  const ctx = scratch.getContext("2d");
+  if (!ctx) {
+    return {
+      dataUrl:
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      heightMm: 1,
+      widthMm: Math.min(maxWidthMm, 10),
+    };
+  }
+  ctx.font = CAPTION_FONT;
+  const lines = wrapFilenameForCaptionCanvas(ctx, fileName, maxInnerW, 6);
+
+  let maxLineW = 0;
+  for (const line of lines) {
+    maxLineW = Math.max(maxLineW, ctx.measureText(line).width);
+  }
+  const contentW = Math.min(maxLogicalW, maxLineW + padX * 2);
+  const contentH = Math.max(lineHeight + padY * 2, lines.length * lineHeight + padY * 2);
+
+  const dpr = Math.min(2, typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.ceil(contentW * dpr));
+  canvas.height = Math.max(1, Math.ceil(contentH * dpr));
+  const dctx = canvas.getContext("2d")!;
+  dctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  dctx.fillStyle = "#1a1a1a";
+  dctx.font = CAPTION_FONT;
+  lines.forEach((line, i) => {
+    dctx.fillText(line, padX, padY + (i + 1) * lineHeight - Math.round(fontPx * 0.2));
+  });
+
+  const dataUrl = canvas.toDataURL("image/png");
+  const heightMm = (contentH * 25.4) / 96;
+  const widthMm = (contentW * 25.4) / 96;
+  return { dataUrl, heightMm, widthMm };
+}
+
 function getGraphApiUrl() {
   if (GRAPH_API_URL) {
     return GRAPH_API_URL;
@@ -325,97 +444,113 @@ export default function DesignKnowledgeGraphPage() {
 
   useEffect(() => {
     const nodeIdSet = new Set(nodes.map((item) => item.id));
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as GraphCachePayload;
-        setAssetUseLimits(sanitizeAssetUseLimits(parsed.assetUseLimits, nodeIdSet));
-        const safeCanvases = (parsed.canvases ?? [])
-          .map((item) => ({
-            ...item,
-            manualEdges: (item.manualEdges ?? []).filter((edge) => isValidEdge(edge, nodeIdSet)),
-            placedNodes: Object.fromEntries(
-              Object.entries(item.placedNodes ?? {}).filter(([id]) => nodeIdSet.has(id)),
-            ) as Record<string, { x: number; y: number }>,
-            nodeSize:
-              item.nodeSize === "small" || item.nodeSize === "medium" || item.nodeSize === "large"
-                ? item.nodeSize
-                : "medium",
-            groupNames:
-              item.groupNames && typeof item.groupNames === "object"
-                ? (item.groupNames as Record<string, string>)
-                : {},
-          }))
-          .filter((item) => item.id && item.name);
-        if (safeCanvases.length > 0) {
-          setCanvases(safeCanvases);
-          const cachedActiveId = safeCanvases.some((item) => item.id === parsed.activeCanvasId)
-            ? parsed.activeCanvasId
-            : safeCanvases[0].id;
-          setActiveCanvasId(cachedActiveId);
-          setSelectedId(parsed.selectedId ?? null);
-          setLastSyncedAt(typeof parsed.updatedAt === "number" ? parsed.updatedAt : Date.now());
-          return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const raw = await readAppCache(STORAGE_KEY);
+        if (cancelled) return;
+        if (raw) {
+          const parsed = JSON.parse(raw) as GraphCachePayload;
+          setAssetUseLimits(sanitizeAssetUseLimits(parsed.assetUseLimits, nodeIdSet));
+          const safeCanvases = (parsed.canvases ?? [])
+            .map((item) => ({
+              ...item,
+              manualEdges: (item.manualEdges ?? []).filter((edge) => isValidEdge(edge, nodeIdSet)),
+              placedNodes: Object.fromEntries(
+                Object.entries(item.placedNodes ?? {}).filter(([id]) => nodeIdSet.has(id)),
+              ) as Record<string, { x: number; y: number }>,
+              nodeSize:
+                item.nodeSize === "small" || item.nodeSize === "medium" || item.nodeSize === "large"
+                  ? item.nodeSize
+                  : "medium",
+              groupNames:
+                item.groupNames && typeof item.groupNames === "object"
+                  ? (item.groupNames as Record<string, string>)
+                  : {},
+            }))
+            .filter((item) => item.id && item.name);
+          if (safeCanvases.length > 0) {
+            setCanvases(safeCanvases);
+            const cachedActiveId = safeCanvases.some((item) => item.id === parsed.activeCanvasId)
+              ? parsed.activeCanvasId
+              : safeCanvases[0].id;
+            setActiveCanvasId(cachedActiveId);
+            setSelectedId(parsed.selectedId ?? null);
+            setLastSyncedAt(typeof parsed.updatedAt === "number" ? parsed.updatedAt : Date.now());
+            return;
+          }
         }
-      }
 
-      const legacyCanvasRaw = localStorage.getItem(LEGACY_CANVAS_LIST_KEY);
-      if (legacyCanvasRaw) {
+        const legacyCanvasRaw = await readAppCache(LEGACY_CANVAS_LIST_KEY);
+        if (cancelled) return;
+        if (legacyCanvasRaw) {
+          setAssetUseLimits({});
+          const parsed = JSON.parse(legacyCanvasRaw) as CanvasData[];
+          const safeCanvases = parsed
+            .map((item) => ({
+              ...item,
+              manualEdges: (item.manualEdges ?? []).filter((edge) => isValidEdge(edge, nodeIdSet)),
+              placedNodes: Object.fromEntries(
+                Object.entries(item.placedNodes ?? {}).filter(([id]) => nodeIdSet.has(id)),
+              ) as Record<string, { x: number; y: number }>,
+              nodeSize:
+                item.nodeSize === "small" || item.nodeSize === "medium" || item.nodeSize === "large"
+                  ? item.nodeSize
+                  : "medium",
+              groupNames:
+                item.groupNames && typeof item.groupNames === "object"
+                  ? (item.groupNames as Record<string, string>)
+                  : {},
+            }))
+            .filter((item) => item.id && item.name);
+          if (safeCanvases.length > 0) {
+            const now = Date.now();
+            setCanvases(safeCanvases);
+            setActiveCanvasId(safeCanvases[0].id);
+            setLastSyncedAt(now);
+            void removeAppCache(LEGACY_CANVAS_LIST_KEY);
+            return;
+          }
+        }
+
         setAssetUseLimits({});
-        const parsed = JSON.parse(legacyCanvasRaw) as CanvasData[];
-        const safeCanvases = parsed
-          .map((item) => ({
-            ...item,
-            manualEdges: (item.manualEdges ?? []).filter((edge) => isValidEdge(edge, nodeIdSet)),
-            placedNodes: Object.fromEntries(
-              Object.entries(item.placedNodes ?? {}).filter(([id]) => nodeIdSet.has(id)),
-            ) as Record<string, { x: number; y: number }>,
-            nodeSize:
-              item.nodeSize === "small" || item.nodeSize === "medium" || item.nodeSize === "large"
-                ? item.nodeSize
-                : "medium",
-            groupNames:
-              item.groupNames && typeof item.groupNames === "object"
-                ? (item.groupNames as Record<string, string>)
-                : {},
-          }))
-          .filter((item) => item.id && item.name);
-        if (safeCanvases.length > 0) {
-          const now = Date.now();
-          setCanvases(safeCanvases);
-          setActiveCanvasId(safeCanvases[0].id);
-          setLastSyncedAt(now);
-          return;
+        const legacyEdgesRaw = await readAppCache(LEGACY_EDGE_KEY);
+        const legacyPlacedRaw = await readAppCache(LEGACY_PLACED_KEY);
+        const legacySizeRaw = await readAppCache(STORAGE_SIZE_KEY);
+        if (cancelled) return;
+        const legacyEdges = legacyEdgesRaw ? (JSON.parse(legacyEdgesRaw) as ManualEdge[]) : [];
+        const legacyPlaced = legacyPlacedRaw
+          ? (JSON.parse(legacyPlacedRaw) as Record<string, { x: number; y: number }>)
+          : {};
+        const first = createCanvas("默认画布");
+        first.manualEdges = legacyEdges.filter((item) => isValidEdge(item, nodeIdSet));
+        first.placedNodes = Object.fromEntries(
+          Object.entries(legacyPlaced).filter(([id]) => nodeIdSet.has(id)),
+        ) as Record<string, { x: number; y: number }>;
+        first.nodeSize =
+          legacySizeRaw === "small" || legacySizeRaw === "medium" || legacySizeRaw === "large"
+            ? legacySizeRaw
+            : "medium";
+        setCanvases([first]);
+        setActiveCanvasId(first.id);
+        setLastSyncedAt(Date.now());
+        if (legacyEdgesRaw || legacyPlacedRaw || legacySizeRaw) {
+          void removeAppCache(LEGACY_EDGE_KEY);
+          void removeAppCache(LEGACY_PLACED_KEY);
+          void removeAppCache(STORAGE_SIZE_KEY);
         }
+      } catch {
+        if (cancelled) return;
+        setAssetUseLimits({});
+        const first = createCanvas("默认画布");
+        setCanvases([first]);
+        setActiveCanvasId(first.id);
+        setLastSyncedAt(Date.now());
       }
-
-      setAssetUseLimits({});
-      const legacyEdgesRaw = localStorage.getItem(LEGACY_EDGE_KEY);
-      const legacyPlacedRaw = localStorage.getItem(LEGACY_PLACED_KEY);
-      const legacySizeRaw = localStorage.getItem(STORAGE_SIZE_KEY);
-      const legacyEdges = legacyEdgesRaw ? (JSON.parse(legacyEdgesRaw) as ManualEdge[]) : [];
-      const legacyPlaced = legacyPlacedRaw
-        ? (JSON.parse(legacyPlacedRaw) as Record<string, { x: number; y: number }>)
-        : {};
-      const first = createCanvas("默认画布");
-      first.manualEdges = legacyEdges.filter((item) => isValidEdge(item, nodeIdSet));
-      first.placedNodes = Object.fromEntries(
-        Object.entries(legacyPlaced).filter(([id]) => nodeIdSet.has(id)),
-      ) as Record<string, { x: number; y: number }>;
-      first.nodeSize =
-        legacySizeRaw === "small" || legacySizeRaw === "medium" || legacySizeRaw === "large"
-          ? legacySizeRaw
-          : "medium";
-      setCanvases([first]);
-      setActiveCanvasId(first.id);
-      setLastSyncedAt(Date.now());
-    } catch {
-      setAssetUseLimits({});
-      const first = createCanvas("默认画布");
-      setCanvases([first]);
-      setActiveCanvasId(first.id);
-      setLastSyncedAt(Date.now());
-    }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [nodes]);
 
   useEffect(() => {
@@ -428,7 +563,7 @@ export default function DesignKnowledgeGraphPage() {
         canvases,
         assetUseLimits,
       };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      void writeAppCache(STORAGE_KEY, JSON.stringify(payload));
       setLastSyncedAt(payload.updatedAt);
     }
   }, [canvases, activeCanvasId, selectedId, assetUseLimits]);
@@ -753,6 +888,7 @@ export default function DesignKnowledgeGraphPage() {
       const margin = 8;
       const maxW = pageW - margin * 2;
       const maxH = pageH - margin * 2;
+      const captionGapMm = 2;
       let firstPage = true;
       for (const node of pngNodes) {
         const res = await fetch(node.url!);
@@ -764,6 +900,9 @@ export default function DesignKnowledgeGraphPage() {
         const extFallback: "PNG" | "JPEG" | "WEBP" = /\.jpe?g$/i.test(node.id) ? "JPEG" : /\.webp$/i.test(node.id) ? "WEBP" : "PNG";
         const format = inferJsPdfImageFormat(blob.type || "", extFallback);
         const { width: iw, height: ih } = await loadImageNaturalSize(dataUrl);
+        const fileDisplayName = node.id.split(/[/\\]/).pop() ?? `${node.title}.png`;
+        const caption = renderFilenameCaptionPng(fileDisplayName, maxW);
+        const imageBandH = Math.max(20, maxH - caption.heightMm - captionGapMm);
         if (!firstPage) {
           pdf.addPage();
         }
@@ -771,13 +910,18 @@ export default function DesignKnowledgeGraphPage() {
         const imgAspect = iw / ih;
         let drawW = maxW;
         let drawH = drawW / imgAspect;
-        if (drawH > maxH) {
-          drawH = maxH;
+        if (drawH > imageBandH) {
+          drawH = imageBandH;
           drawW = drawH * imgAspect;
         }
         const x = margin + (maxW - drawW) / 2;
-        const y = margin + (maxH - drawH) / 2;
+        const y = margin + (imageBandH - drawH) / 2;
         pdf.addImage(dataUrl, format, x, y, drawW, drawH);
+        const capW = Math.min(maxW, caption.widthMm);
+        const capH = (caption.heightMm * capW) / caption.widthMm;
+        const capX = margin + (maxW - capW) / 2;
+        const capY = margin + imageBandH + captionGapMm;
+        pdf.addImage(caption.dataUrl, "PNG", capX, capY, capW, capH);
       }
       const baseName = sanitizeFilenameSegment(target.name);
       pdf.save(`${baseName || "分组"}-图片.pdf`);
@@ -891,7 +1035,7 @@ export default function DesignKnowledgeGraphPage() {
       }
       const newId = data.newId ?? "";
       if (newId) {
-        patchDesignNoteLocalStorageAfterRename(assetFileOpDialog.id, newId);
+        await patchDesignNoteCacheAfterRename(assetFileOpDialog.id, newId);
       }
       setAssetFileOpDialog(null);
       window.location.reload();
@@ -916,7 +1060,7 @@ export default function DesignKnowledgeGraphPage() {
         window.alert(data.error ?? `删除失败（HTTP ${res.status}）`);
         return;
       }
-      patchDesignNoteLocalStorageAfterDelete(assetFileOpDialog.id);
+      await patchDesignNoteCacheAfterDelete(assetFileOpDialog.id);
       setAssetFileOpDialog(null);
       window.location.reload();
     } finally {
@@ -1186,7 +1330,8 @@ export default function DesignKnowledgeGraphPage() {
             画布：{activeCanvas.name}，已放置 {placedNodeList.length} 个节点 / 关系 {manualEdges.length} 条（自动保存）
           </span>
           <span className="toolbar-muted">
-            本地缓存：{lastSyncedAt ? new Date(lastSyncedAt).toLocaleString() : "未同步"}
+            {persistMediumShortLabel()}：
+            {lastSyncedAt ? new Date(lastSyncedAt).toLocaleString() : "未同步"}
           </span>
         </div>
         <div className="graph-board-toolbar">

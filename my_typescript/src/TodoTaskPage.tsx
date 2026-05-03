@@ -1,4 +1,5 @@
 import { ClipboardEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { persistMediumShortLabel, readAppCache, writeAppCache } from "./appLocalCache";
 
 type TodoTask = {
   id: string;
@@ -19,12 +20,11 @@ type TodoCachePayload = {
   tasks: TodoTask[];
 };
 
-function loadTodoTasks(): TodoTask[] {
+function parseTodoTasksRaw(raw: string | null): TodoTask[] {
+  if (!raw) {
+    return [];
+  }
   try {
-    const raw = localStorage.getItem(TODO_TASKS_STORAGE_KEY);
-    if (!raw) {
-      return [];
-    }
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) {
       return [];
@@ -48,6 +48,11 @@ function loadTodoTasks(): TodoTask[] {
   }
 }
 
+async function loadTodoTasks(): Promise<TodoTask[]> {
+  const raw = await readAppCache(TODO_TASKS_STORAGE_KEY);
+  return parseTodoTasksRaw(raw);
+}
+
 function getTodoApiUrl(): string {
   if (TODO_API_URL) {
     return TODO_API_URL;
@@ -69,13 +74,16 @@ function toDataUrl(file: File): Promise<string> {
 }
 
 export default function TodoTaskPage() {
-  const [tasks, setTasks] = useState<TodoTask[]>(() => loadTodoTasks());
+  const [tasks, setTasks] = useState<TodoTask[]>([]);
+  const [cacheHydrated, setCacheHydrated] = useState(false);
   const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
   const [imageDataUrl, setImageDataUrl] = useState<string | undefined>(undefined);
   const [imageName, setImageName] = useState("");
   const [isReadingImage, setIsReadingImage] = useState(false);
-  const [remoteStatus, setRemoteStatus] = useState("未连接项目级存储");
+  const [remoteStatus, setRemoteStatus] = useState(
+    () => `未连接项目级同步（${persistMediumShortLabel()}）`,
+  );
   const todoApiUrl = getTodoApiUrl();
 
   const completedCount = useMemo(
@@ -84,18 +92,31 @@ export default function TodoTaskPage() {
   );
 
   useEffect(() => {
-    try {
-      localStorage.setItem(TODO_TASKS_STORAGE_KEY, JSON.stringify(tasks));
-    } catch {
-      // ignore quota / private mode
-    }
-  }, [tasks]);
+    let cancelled = false;
+    void (async () => {
+      const local = await loadTodoTasks();
+      if (cancelled) return;
+      setTasks(local);
+      setCacheHydrated(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
+    if (!cacheHydrated) return;
+    void writeAppCache(TODO_TASKS_STORAGE_KEY, JSON.stringify(tasks));
+  }, [tasks, cacheHydrated]);
+
+  useEffect(() => {
+    if (!cacheHydrated) return;
     let cancelled = false;
     async function loadRemoteTasks() {
       if (!todoApiUrl) {
-        setRemoteStatus("未配置待办接口地址（仅本地缓存）");
+        setRemoteStatus(
+          `未配置待办接口地址（数据写入 ${persistMediumShortLabel()}）`,
+        );
         return;
       }
       try {
@@ -142,10 +163,10 @@ export default function TodoTaskPage() {
     return () => {
       cancelled = true;
     };
-  }, [todoApiUrl]);
+  }, [todoApiUrl, cacheHydrated]);
 
   useEffect(() => {
-    if (!todoApiUrl) {
+    if (!cacheHydrated || !todoApiUrl) {
       return;
     }
     const timer = window.setTimeout(async () => {
@@ -172,7 +193,7 @@ export default function TodoTaskPage() {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [tasks, todoApiUrl]);
+  }, [tasks, todoApiUrl, cacheHydrated]);
 
   async function handleImagePaste(event: ClipboardEvent<HTMLTextAreaElement>) {
     const imageItem = Array.from(event.clipboardData.items).find((item) =>

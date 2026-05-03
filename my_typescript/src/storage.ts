@@ -1,3 +1,4 @@
+import { readAppCache, writeAppCache } from "./appLocalCache";
 import type { WorkProjectItem } from "./types";
 
 const KEY = "work_project_flow_state_v1";
@@ -8,9 +9,9 @@ export interface PersistedUiState {
   addressReadMode: boolean;
 }
 
-export function loadState(): PersistedUiState | null {
+export async function loadState(): Promise<PersistedUiState | null> {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = await readAppCache(KEY);
     if (!raw) return null;
     const data = JSON.parse(raw) as PersistedUiState;
     if (!Array.isArray(data.projects)) return null;
@@ -20,10 +21,10 @@ export function loadState(): PersistedUiState | null {
   }
 }
 
-export function saveState(state: PersistedUiState): void {
+export async function saveState(state: PersistedUiState): Promise<void> {
   try {
-    localStorage.setItem(KEY, JSON.stringify(state));
+    await writeAppCache(KEY, JSON.stringify(state));
   } catch {
-    // ignore quota / private mode
+    // ignore
   }
 }

@@ -3,12 +3,14 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
     "dev:api": "node server/chat-proxy.mjs",
-    "dev:all": "npx kill-port 8787 && concurrently -n api,web -c green,cyan \"npm:dev:api\" \"npm:dev\"",
+    "dev:all": "npx kill-port 8787 && concurrently -n api,app -c green,cyan \"npm:dev:api\" \"npm:dev\"",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "electron:start": "electron ."
   },
   "dependencies": {
     "dotenv": "^17.4.2",
@@ -22,8 +24,10 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "concurrently": "^9.2.1",
+    "electron": "^35.1.5",
     "kill-port": "^2.0.1",
     "typescript": "~5.6.2",
-    "vite": "^5.4.11"
+    "vite": "^5.4.11",
+    "vite-plugin-electron": "^0.29.0"
   }
 }

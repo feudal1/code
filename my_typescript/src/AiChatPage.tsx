@@ -1,4 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  persistMediumShortLabel,
+  readAppCache,
+  removeAppCache,
+  writeAppCache,
+} from "./appLocalCache";
 
 export interface ChatMessage {
   id: string;
@@ -17,10 +23,9 @@ type ChatHistoryPayload = {
   messages: ChatMessage[];
 };
 
-function loadMessages(): ChatMessage[] {
+function parseMessagesRaw(raw: string | null): ChatMessage[] {
+  if (!raw) return [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(
@@ -37,12 +42,13 @@ function loadMessages(): ChatMessage[] {
   }
 }
 
-function saveMessages(messages: ChatMessage[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
-  } catch {
-    // ignore
-  }
+async function loadMessages(): Promise<ChatMessage[]> {
+  const raw = await readAppCache(STORAGE_KEY);
+  return parseMessagesRaw(raw);
+}
+
+async function saveMessages(messages: ChatMessage[]): Promise<void> {
+  await writeAppCache(STORAGE_KEY, JSON.stringify(messages));
 }
 
 function getChatHistoryApiUrl(): string {
@@ -111,22 +117,42 @@ async function requestAssistantReply(
 }
 
 export default function AiChatPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>(() => loadMessages());
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [cacheHydrated, setCacheHydrated] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
-  const [remoteStatus, setRemoteStatus] = useState("未连接项目级存储");
+  const [remoteStatus, setRemoteStatus] = useState(
+    () => `未连接项目级同步（${persistMediumShortLabel()}）`,
+  );
   const bottomRef = useRef<HTMLDivElement>(null);
   const chatHistoryApiUrl = getChatHistoryApiUrl();
 
   useEffect(() => {
-    saveMessages(messages);
-  }, [messages]);
+    let cancelled = false;
+    void (async () => {
+      const local = await loadMessages();
+      if (cancelled) return;
+      setMessages(local);
+      setCacheHydrated(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
+    if (!cacheHydrated) return;
+    void saveMessages(messages);
+  }, [messages, cacheHydrated]);
+
+  useEffect(() => {
+    if (!cacheHydrated) return;
     let cancelled = false;
     async function loadRemoteMessages() {
       if (!chatHistoryApiUrl) {
-        setRemoteStatus("未配置对话历史接口（仅本地缓存）");
+        setRemoteStatus(
+          `未配置对话历史接口（数据写入 ${persistMediumShortLabel()}）`,
+        );
         return;
       }
       try {
@@ -167,10 +193,10 @@ export default function AiChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [chatHistoryApiUrl]);
+  }, [chatHistoryApiUrl, cacheHydrated]);
 
   useEffect(() => {
-    if (!chatHistoryApiUrl) {
+    if (!cacheHydrated || !chatHistoryApiUrl) {
       return;
     }
     const timer = window.setTimeout(async () => {
@@ -197,7 +223,7 @@ export default function AiChatPage() {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [messages, chatHistoryApiUrl]);
+  }, [messages, chatHistoryApiUrl, cacheHydrated]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -253,7 +279,7 @@ export default function AiChatPage() {
     if (!messages.length) return;
     if (!window.confirm("清空当前对话记录？")) return;
     setMessages([]);
-    localStorage.removeItem(STORAGE_KEY);
+    void removeAppCache(STORAGE_KEY);
   }, [messages.length]);
 
   return (

@@ -1,7 +1,6 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type ChangeEventHandler,
@@ -37,24 +36,6 @@ function getWorkflowApiUrl() {
   return chatApiUrl.replace(/\/api\/chat$/i, "/api/workflow");
 }
 
-function initialLocalState(): {
-  projects: WorkProjectItem[];
-  selectedIndex: number;
-  addressReadMode: boolean;
-} {
-  const loaded = loadState();
-  if (loaded?.projects?.length) {
-    let idx = loaded.selectedIndex;
-    if (idx < 0 || idx >= loaded.projects.length) idx = 0;
-    return {
-      projects: loaded.projects,
-      selectedIndex: idx,
-      addressReadMode: !!loaded.addressReadMode,
-    };
-  }
-  return { projects: [], selectedIndex: -1, addressReadMode: false };
-}
-
 async function copyText(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
@@ -70,11 +51,11 @@ async function copyText(text: string): Promise<boolean> {
 }
 
 export default function WorkflowPage() {
-  const init = useMemo(() => initialLocalState(), []);
   const remoteInitDoneRef = useRef(false);
-  const [projects, setProjects] = useState<WorkProjectItem[]>(init.projects);
-  const [selectedIndex, setSelectedIndex] = useState(init.selectedIndex);
-  const [addressReadMode, setAddressReadMode] = useState(init.addressReadMode);
+  const localPersistReadyRef = useRef(false);
+  const [projects, setProjects] = useState<WorkProjectItem[]>([]);
+  const [selectedIndex, setSelectedIndex] = useState(-1);
+  const [addressReadMode, setAddressReadMode] = useState(false);
   const [newName, setNewName] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [remoteSyncStatus, setRemoteSyncStatus] = useState("未同步到项目文件");
@@ -87,7 +68,8 @@ export default function WorkflowPage() {
   }, []);
 
   useEffect(() => {
-    saveState({ projects, selectedIndex, addressReadMode });
+    if (!localPersistReadyRef.current) return;
+    void saveState({ projects, selectedIndex, addressReadMode });
   }, [projects, selectedIndex, addressReadMode]);
 
   const current =
@@ -288,17 +270,25 @@ export default function WorkflowPage() {
 
   useEffect(() => {
     let cancelled = false;
-    async function initRemote() {
-      if (!workflowApiUrl) {
-        remoteInitDoneRef.current = true;
-        return;
+    async function bootstrap() {
+      const loaded = await loadState();
+      if (cancelled) return;
+      if (loaded?.projects?.length) {
+        let idx = loaded.selectedIndex;
+        if (idx < 0 || idx >= loaded.projects.length) idx = 0;
+        setProjects(loaded.projects);
+        setSelectedIndex(idx);
+        setAddressReadMode(!!loaded.addressReadMode);
       }
-      await loadFromProjectFile({ silent: true });
+      if (workflowApiUrl) {
+        await loadFromProjectFile({ silent: true });
+      }
       if (!cancelled) {
         remoteInitDoneRef.current = true;
+        localPersistReadyRef.current = true;
       }
     }
-    void initRemote();
+    void bootstrap();
     return () => {
       cancelled = true;
     };
