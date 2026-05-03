@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -1826,6 +1827,19 @@ namespace SolidWorksAddinStudy
 
                 statusLabel.Text = $"已导出: {Path.GetFileName(targetPath)}";
                 message = $"已导出 SLDPRT: {targetPath}";
+                try
+                {
+                    Clipboard.Clear();
+                    var fileList = new StringCollection { targetPath };
+                    Clipboard.SetFileDropList(fileList);
+                    message += "\n已将该文件复制到剪贴板，可在资源管理器中粘贴。";
+                }
+                catch (Exception clipEx)
+                {
+                    Debug.WriteLine($"[ExportSubAsm] 复制到剪贴板失败: {clipEx.Message}");
+                    message += $"\n复制到剪贴板失败: {clipEx.Message}";
+                }
+
                 app.SendMsgToUser(message);
                 Debug.WriteLine("[ExportSubAsm] 导出成功");
                 return true;
