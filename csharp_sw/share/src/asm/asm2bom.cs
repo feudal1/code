@@ -36,12 +36,41 @@ namespace tools
 
         private static List<BomPartExportInfo> _lastBomParts = new List<BomPartExportInfo>();
         private static bool _hasGeneratedPartList = false;
+        /// <summary>最近一次写入 <see cref="_lastBomParts"/> 的装配体完整路径（任务窗格采集模式不会更新此项）。</summary>
+        private static string? _lastBomAssemblyFullPath;
 
         public static bool HasGeneratedPartList()
         {
             lock (_bomCacheLock)
             {
                 return _hasGeneratedPartList;
+            }
+        }
+
+        /// <summary>
+        /// 全局 BOM 零件缓存是否存在且对应指定的装配体文档（用于 asm2do / 批量命令，避免沿用上一次的装配体清单）。
+        /// </summary>
+        public static bool HasBomPartListForAssembly(ModelDoc2? swModel)
+        {
+            if (swModel == null || swModel.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY)
+            {
+                return false;
+            }
+
+            string path = swModel.GetPathName();
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            lock (_bomCacheLock)
+            {
+                if (!_hasGeneratedPartList || string.IsNullOrWhiteSpace(_lastBomAssemblyFullPath))
+                {
+                    return false;
+                }
+
+                return string.Equals(_lastBomAssemblyFullPath, path.Trim(), StringComparison.OrdinalIgnoreCase);
             }
         }
 
@@ -53,12 +82,15 @@ namespace tools
             }
         }
 
-        private static void SetLastBomParts(List<BomPartExportInfo> parts)
+        private static void SetLastBomParts(List<BomPartExportInfo> parts, string assemblyFullPath)
         {
             lock (_bomCacheLock)
             {
                 _lastBomParts = parts ?? new List<BomPartExportInfo>();
                 _hasGeneratedPartList = true;
+                _lastBomAssemblyFullPath = string.IsNullOrWhiteSpace(assemblyFullPath)
+                    ? null
+                    : assemblyFullPath.Trim();
             }
         }
 
@@ -68,6 +100,7 @@ namespace tools
             {
                 _lastBomParts = new List<BomPartExportInfo>();
                 _hasGeneratedPartList = false;
+                _lastBomAssemblyFullPath = null;
             }
         }
         
@@ -619,7 +652,7 @@ namespace tools
                 // 同步保存 BOM 零件清单（供 asm2do 等流程复用，避免重复扫描/重复建表）
                 if (!taskPaneCollectionMode)
                 {
-                    SetLastBomParts(new List<BomPartExportInfo>(bomPartsForExport.Values));
+                    SetLastBomParts(new List<BomPartExportInfo>(bomPartsForExport.Values), fullPath);
                 }
                 
                 // 只在需要时启动 Excel 文件

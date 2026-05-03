@@ -1,3 +1,4 @@
+import { jsPDF } from "jspdf";
 import { useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent } from "react";
 
 type AssetNode = {
@@ -80,6 +81,110 @@ function buildEdgeId(source: string, target: string) {
   return source < target ? `${source}@@${target}` : `${target}@@${source}`;
 }
 
+function remapAssetIdInGraphCachePayload(payload: GraphCachePayload, oldId: string, newId: string) {
+  if (payload.selectedId === oldId) {
+    payload.selectedId = newId;
+  }
+  if (payload.assetUseLimits && oldId in payload.assetUseLimits) {
+    const v = payload.assetUseLimits[oldId];
+    delete payload.assetUseLimits[oldId];
+    payload.assetUseLimits[newId] = v;
+  }
+  for (const c of payload.canvases) {
+    if (c.placedNodes && oldId in c.placedNodes) {
+      c.placedNodes[newId] = c.placedNodes[oldId];
+      delete c.placedNodes[oldId];
+    }
+    if (Array.isArray(c.manualEdges)) {
+      const seen = new Set<string>();
+      const next: ManualEdge[] = [];
+      for (const e of c.manualEdges) {
+        const s = e.source === oldId ? newId : e.source;
+        const t = e.target === oldId ? newId : e.target;
+        if (s === t) {
+          continue;
+        }
+        const id = buildEdgeId(s, t);
+        if (seen.has(id)) {
+          continue;
+        }
+        seen.add(id);
+        next.push({ id, source: s, target: t });
+      }
+      c.manualEdges = next;
+    }
+    if (c.groupNames && typeof c.groupNames === "object") {
+      const nextGn: Record<string, string> = {};
+      for (const [k, v] of Object.entries(c.groupNames)) {
+        const parts = k.split("||").map((p) => (p === oldId ? newId : p)).filter(Boolean);
+        if (parts.length < 2) {
+          continue;
+        }
+        const nk = parts.slice().sort((a, b) => a.localeCompare(b, "zh-CN")).join("||");
+        nextGn[nk] = typeof v === "string" ? v : String(v ?? "");
+      }
+      c.groupNames = nextGn;
+    }
+  }
+}
+
+function removeAssetFromGraphCachePayload(payload: GraphCachePayload, assetId: string) {
+  if (payload.selectedId === assetId) {
+    payload.selectedId = null;
+  }
+  if (payload.assetUseLimits && assetId in payload.assetUseLimits) {
+    delete payload.assetUseLimits[assetId];
+  }
+  for (const c of payload.canvases) {
+    if (c.placedNodes && assetId in c.placedNodes) {
+      delete c.placedNodes[assetId];
+    }
+    if (Array.isArray(c.manualEdges)) {
+      c.manualEdges = c.manualEdges.filter((e) => e.source !== assetId && e.target !== assetId);
+    }
+    if (c.groupNames && typeof c.groupNames === "object") {
+      const nextGn: Record<string, string> = {};
+      for (const [k, v] of Object.entries(c.groupNames)) {
+        if (k.split("||").includes(assetId)) {
+          continue;
+        }
+        nextGn[k] = v;
+      }
+      c.groupNames = nextGn;
+    }
+  }
+}
+
+function patchDesignNoteLocalStorageAfterRename(oldId: string, newId: string) {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      return;
+    }
+    const parsed = JSON.parse(raw) as GraphCachePayload;
+    remapAssetIdInGraphCachePayload(parsed, oldId, newId);
+    parsed.updatedAt = Date.now();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+  } catch {
+    // ignore
+  }
+}
+
+function patchDesignNoteLocalStorageAfterDelete(assetId: string) {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      return;
+    }
+    const parsed = JSON.parse(raw) as GraphCachePayload;
+    removeAssetFromGraphCachePayload(parsed, assetId);
+    parsed.updatedAt = Date.now();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+  } catch {
+    // ignore
+  }
+}
+
 const ASSET_USE_LIMIT_MIN = 1;
 const ASSET_USE_LIMIT_MAX = 99;
 
@@ -134,6 +239,42 @@ function buildGroupKey(nodeIds: string[]) {
   return nodeIds.slice().sort().join("||");
 }
 
+function sanitizeFilenameSegment(name: string) {
+  return name.replace(/[/\\?%*:|"<>]/g, "_").trim().slice(0, 80);
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(new Error("读取图片失败"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function inferJsPdfImageFormat(mime: string, fallback: "PNG" | "JPEG" | "WEBP"): "PNG" | "JPEG" | "WEBP" {
+  const lower = mime.toLowerCase();
+  if (lower.includes("jpeg") || lower.includes("jpg")) {
+    return "JPEG";
+  }
+  if (lower.includes("webp")) {
+    return "WEBP";
+  }
+  if (lower.includes("png")) {
+    return "PNG";
+  }
+  return fallback;
+}
+
+function loadImageNaturalSize(src: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onerror = () => reject(new Error("图片解码失败"));
+    img.src = src;
+  });
+}
+
 function getGraphApiUrl() {
   if (GRAPH_API_URL) {
     return GRAPH_API_URL;
@@ -143,6 +284,19 @@ function getGraphApiUrl() {
     return "";
   }
   return chatApiUrl.replace(/\/api\/chat$/i, "/api/graph");
+}
+
+/** 与 graph/chat 同源代理上的设计笔记文件操作（重命名 / 删除磁盘素材） */
+function getDesignNotesFsApiUrl() {
+  const g = import.meta.env.VITE_GRAPH_API_URL?.trim() ?? "";
+  if (g) {
+    return g.replace(/\/api\/graph\/?$/i, "/api/design-notes");
+  }
+  const c = import.meta.env.VITE_CHAT_API_URL?.trim() ?? "";
+  if (c) {
+    return c.replace(/\/api\/chat\/?$/i, "/api/design-notes");
+  }
+  return "";
 }
 
 export default function DesignKnowledgeGraphPage() {
@@ -161,6 +315,13 @@ export default function DesignKnowledgeGraphPage() {
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const [remoteSyncStatus, setRemoteSyncStatus] = useState("未同步到项目文件");
   const [assetUseLimits, setAssetUseLimits] = useState<Record<string, number>>({});
+  const [exportingGroupPdf, setExportingGroupPdf] = useState(false);
+  const [assetFileOpDialog, setAssetFileOpDialog] = useState<
+    | null
+    | { mode: "rename"; id: string; value: string }
+    | { mode: "delete"; id: string }
+  >(null);
+  const [assetFileOpBusy, setAssetFileOpBusy] = useState(false);
 
   useEffect(() => {
     const nodeIdSet = new Set(nodes.map((item) => item.id));
@@ -281,6 +442,7 @@ export default function DesignKnowledgeGraphPage() {
   const nodeSize = activeCanvas?.nodeSize ?? "medium";
   const groupNames = activeCanvas?.groupNames ?? {};
   const graphApiUrl = getGraphApiUrl();
+  const designNotesFsApiUrl = getDesignNotesFsApiUrl();
 
   const nodeMap = useMemo(() => new Map(nodes.map((item) => [item.id, item])), [nodes]);
   const placedNodeList = useMemo(
@@ -568,6 +730,64 @@ export default function DesignKnowledgeGraphPage() {
     }));
   }
 
+  async function exportSelectedGroupImagesPdf() {
+    if (!selectedGroupKey) {
+      return;
+    }
+    const target = groups.find((item) => item.key === selectedGroupKey);
+    if (!target) {
+      return;
+    }
+    const pngNodes = target.nodeIds
+      .map((id) => nodeMap.get(id))
+      .filter((item): item is AssetNode => !!item && item.kind === "png" && !!item.url);
+    if (!pngNodes.length) {
+      window.alert("当前分组内没有图片素材（.png）。");
+      return;
+    }
+    setExportingGroupPdf(true);
+    try {
+      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const margin = 8;
+      const maxW = pageW - margin * 2;
+      const maxH = pageH - margin * 2;
+      let firstPage = true;
+      for (const node of pngNodes) {
+        const res = await fetch(node.url!);
+        if (!res.ok) {
+          throw new Error(`「${node.title}」加载失败（HTTP ${res.status}）`);
+        }
+        const blob = await res.blob();
+        const dataUrl = await blobToDataUrl(blob);
+        const extFallback: "PNG" | "JPEG" | "WEBP" = /\.jpe?g$/i.test(node.id) ? "JPEG" : /\.webp$/i.test(node.id) ? "WEBP" : "PNG";
+        const format = inferJsPdfImageFormat(blob.type || "", extFallback);
+        const { width: iw, height: ih } = await loadImageNaturalSize(dataUrl);
+        if (!firstPage) {
+          pdf.addPage();
+        }
+        firstPage = false;
+        const imgAspect = iw / ih;
+        let drawW = maxW;
+        let drawH = drawW / imgAspect;
+        if (drawH > maxH) {
+          drawH = maxH;
+          drawW = drawH * imgAspect;
+        }
+        const x = margin + (maxW - drawW) / 2;
+        const y = margin + (maxH - drawH) / 2;
+        pdf.addImage(dataUrl, format, x, y, drawW, drawH);
+      }
+      const baseName = sanitizeFilenameSegment(target.name);
+      pdf.save(`${baseName || "分组"}-图片.pdf`);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setExportingGroupPdf(false);
+    }
+  }
+
   function onNodePointerDown(nodeId: string, event: ReactPointerEvent<HTMLDivElement>) {
     if (event.button !== 0) {
       return;
@@ -640,6 +860,68 @@ export default function DesignKnowledgeGraphPage() {
       Math.max(ASSET_USE_LIMIT_MIN, Math.max(used, current + delta)),
     );
     setAssetUseLimits((prev) => ({ ...prev, [assetId]: nextVal }));
+  }
+
+  async function submitAssetFileRename() {
+    if (!assetFileOpDialog || assetFileOpDialog.mode !== "rename" || !designNotesFsApiUrl) {
+      return;
+    }
+    const newBase = sanitizeFilenameSegment(
+      assetFileOpDialog.value.replace(/\.(txt|png)$/i, "").trim(),
+    );
+    if (!newBase) {
+      window.alert("请输入有效文件名（可不带 .txt / .png 后缀）。");
+      return;
+    }
+    setAssetFileOpBusy(true);
+    try {
+      const res = await fetch(`${designNotesFsApiUrl}/rename`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: assetFileOpDialog.id, newBaseName: newBase }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        newId?: string;
+        error?: string;
+      };
+      if (!res.ok) {
+        window.alert(data.error ?? `重命名失败（HTTP ${res.status}）`);
+        return;
+      }
+      const newId = data.newId ?? "";
+      if (newId) {
+        patchDesignNoteLocalStorageAfterRename(assetFileOpDialog.id, newId);
+      }
+      setAssetFileOpDialog(null);
+      window.location.reload();
+    } finally {
+      setAssetFileOpBusy(false);
+    }
+  }
+
+  async function confirmAssetFileDelete() {
+    if (!assetFileOpDialog || assetFileOpDialog.mode !== "delete" || !designNotesFsApiUrl) {
+      return;
+    }
+    setAssetFileOpBusy(true);
+    try {
+      const res = await fetch(`${designNotesFsApiUrl}/delete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: assetFileOpDialog.id }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok) {
+        window.alert(data.error ?? `删除失败（HTTP ${res.status}）`);
+        return;
+      }
+      patchDesignNoteLocalStorageAfterDelete(assetFileOpDialog.id);
+      setAssetFileOpDialog(null);
+      window.location.reload();
+    } finally {
+      setAssetFileOpBusy(false);
+    }
   }
 
   async function saveToProjectFile(options?: { silent?: boolean }) {
@@ -771,6 +1053,15 @@ export default function DesignKnowledgeGraphPage() {
     <div className="graph-shell graph-shell--manual">
       <section className="graph-side-panel">
         <h3>素材列表（png + txt）</h3>
+        {designNotesFsApiUrl ? (
+          <p className="toolbar-muted graph-note-fs-hint">
+            选中素材后可「重命名本地文件」或「删除本地文件」（同步改磁盘与图谱缓存，完成后会自动刷新页面）。
+          </p>
+        ) : (
+          <p className="toolbar-muted graph-note-fs-hint">
+            配置 VITE_GRAPH_API_URL 或 VITE_CHAT_API_URL 并启动本地代理后，可重命名 / 删除「相关文档/设计笔记」下的素材文件。
+          </p>
+        )}
         <ul className="graph-note-list">
           {nodes.map((item) => (
             (() => {
@@ -848,6 +1139,30 @@ export default function DesignKnowledgeGraphPage() {
                 <div className="graph-note-inline-detail">
                   <h4>{item.title}</h4>
                   <div className="toolbar-muted">类型：{item.kind.toUpperCase()}</div>
+                  {designNotesFsApiUrl ? (
+                    <div className="graph-note-fs-actions">
+                      <button
+                        type="button"
+                        disabled={assetFileOpBusy}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setAssetFileOpDialog({ mode: "rename", id: item.id, value: item.title });
+                        }}
+                      >
+                        重命名本地文件
+                      </button>
+                      <button
+                        type="button"
+                        disabled={assetFileOpBusy}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setAssetFileOpDialog({ mode: "delete", id: item.id });
+                        }}
+                      >
+                        删除本地文件
+                      </button>
+                    </div>
+                  ) : null}
                   {item.kind === "txt" ? (
                     <p>{item.content || "该文本为空。"}</p>
                   ) : item.url ? (
@@ -927,6 +1242,13 @@ export default function DesignKnowledgeGraphPage() {
           </select>
           <button type="button" onClick={renameSelectedGroup} disabled={!groups.length || !selectedGroupKey}>
             重命名分组
+          </button>
+          <button
+            type="button"
+            onClick={() => void exportSelectedGroupImagesPdf()}
+            disabled={!groups.length || !selectedGroupKey || exportingGroupPdf}
+          >
+            {exportingGroupPdf ? "导出 PDF…" : "组内图片导出 PDF"}
           </button>
           <span className="toolbar-muted">{remoteSyncStatus}</span>
         </div>
@@ -1080,6 +1402,71 @@ export default function DesignKnowledgeGraphPage() {
               </button>
               <button type="button" onClick={submitCanvasDialog}>
                 确定
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {assetFileOpDialog?.mode === "rename" ? (
+        <div
+          className="graph-image-modal"
+          onClick={() => !assetFileOpBusy && setAssetFileOpDialog(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="graph-dialog-panel" onClick={(event) => event.stopPropagation()}>
+            <h4>重命名本地素材文件</h4>
+            <p className="toolbar-muted">
+              新文件名（无需写扩展名；将保留原{" "}
+              {nodes.find((n) => n.id === assetFileOpDialog.id)?.kind === "png" ? ".png" : ".txt"}）
+            </p>
+            <input
+              type="text"
+              value={assetFileOpDialog.value}
+              onChange={(event) =>
+                setAssetFileOpDialog((prev) =>
+                  prev && prev.mode === "rename" ? { ...prev, value: event.target.value } : prev,
+                )
+              }
+              placeholder="新的文件主名"
+              autoFocus
+              disabled={assetFileOpBusy}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void submitAssetFileRename();
+                }
+              }}
+            />
+            <div className="graph-dialog-actions">
+              <button type="button" disabled={assetFileOpBusy} onClick={() => setAssetFileOpDialog(null)}>
+                取消
+              </button>
+              <button type="button" disabled={assetFileOpBusy} onClick={() => void submitAssetFileRename()}>
+                {assetFileOpBusy ? "处理中…" : "确定"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {assetFileOpDialog?.mode === "delete" ? (
+        <div
+          className="graph-image-modal"
+          onClick={() => !assetFileOpBusy && setAssetFileOpDialog(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="graph-dialog-panel" onClick={(event) => event.stopPropagation()}>
+            <h4>删除本地素材文件</h4>
+            <p>
+              将永久删除磁盘上的该文件，并从所有画布移除对应节点与连线。此操作不可撤销。
+            </p>
+            <div className="graph-dialog-actions">
+              <button type="button" disabled={assetFileOpBusy} onClick={() => setAssetFileOpDialog(null)}>
+                取消
+              </button>
+              <button type="button" disabled={assetFileOpBusy} onClick={() => void confirmAssetFileDelete()}>
+                {assetFileOpBusy ? "处理中…" : "确定删除"}
               </button>
             </div>
           </div>

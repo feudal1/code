@@ -737,12 +737,12 @@ using SolidWorksAddinStudy.Services;
                 return;
             }
 
-            if (!asm2bom.HasGeneratedPartList())
+            if (!asm2bom.HasBomPartListForAssembly(swModel))
             {
                 int bomResult = asm2bom.run(swApp, swModel, "零件", false).GetAwaiter().GetResult();
                 if (bomResult != 0)
                 {
-                    swApp.SendMsgToUser("无法生成零件BOM缓存，终止批量转DWG");
+                    swApp.SendMsgToUser("无法生成当前装配体的零件 BOM 缓存，终止批量转 DWG");
                     return;
                 }
             }

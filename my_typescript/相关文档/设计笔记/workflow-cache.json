@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "updatedAt": 1777785427053,
+  "selectedIndex": 0,
+  "addressReadMode": false,
+  "projects": [
+    {
+      "ProjectName": "顶升800x1000x750",
+      "ProjectAssemblyPath": "",
+      "RollerDrawing": "",
+      "RollerDrawingUpdatedAt": "0001-01-01T00:00:00",
+      "RollerFollowUp": "",
+      "PipeDrawing": "",
+      "PipeDrawingUpdatedAt": "0001-01-01T00:00:00",
+      "PipeFollowUp": "",
+      "SheetMetalDrawing": "",
+      "SheetMetalDrawingUpdatedAt": "0001-01-01T00:00:00",
+      "SheetMetalFollowUp": "",
+      "MachiningDrawing": "",
+      "MachiningDrawingUpdatedAt": "0001-01-01T00:00:00",
+      "MachiningFollowUp": "",
+      "PurchasedProcurement": "",
+      "PurchasedProcurementUpdatedAt": "0001-01-01T00:00:00",
+      "PurchasedFollowUp": "",
+      "BearingProcurement": "",
+      "BearingProcurementUpdatedAt": "0001-01-01T00:00:00",
+      "BearingFollowUp": "",
+      "TimingBeltProcurement": "",
+      "TimingBeltProcurementUpdatedAt": "0001-01-01T00:00:00",
+      "TimingBeltFollowUp": "",
+      "CylinderSelection": "",
+      "CylinderSelectionUpdatedAt": "0001-01-01T00:00:00",
+      "CylinderSelectionFollowUp": "",
+      "CountersinkMarkingDrawing": "",
+      "CountersinkMarkingDrawingUpdatedAt": "0001-01-01T00:00:00",
+      "CountersinkMarkingFollowUp": ""
+    }
+  ]
+}

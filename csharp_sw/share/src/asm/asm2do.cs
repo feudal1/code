@@ -41,11 +41,11 @@ namespace tools
                     return null;
                 }
 
-                Console.WriteLine("=== 从BOM缓存清单获取零件信息 ===");
+                Console.WriteLine("=== 从当前装配体 BOM 清单获取零件信息（缓存按装配体路径匹配）===");
 
-                if (!asm2bom.HasGeneratedPartList())
+                if (!asm2bom.HasBomPartListForAssembly(swModel))
                 {
-                    Console.WriteLine("BOM清单未生成，先执行一次 asm2bom 生成清单...");
+                    Console.WriteLine("当前装配体尚无 BOM 零件缓存或已切换装配体，正在执行 asm2bom 生成清单...");
                     int bomResult = asm2bom.run(swApp, swModel, "零件", false).GetAwaiter().GetResult();
                     if (bomResult != 0)
                     {

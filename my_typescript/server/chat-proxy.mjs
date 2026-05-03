@@ -18,6 +18,8 @@ const GRAPH_FILE_PATH = path.resolve(process.cwd(), "相关文档/设计笔记/g
 const TODO_FILE_PATH = path.resolve(process.cwd(), "相关文档/设计笔记/todo-cache.json");
 const CHAT_HISTORY_FILE_PATH = path.resolve(process.cwd(), "相关文档/设计笔记/chat-history-cache.json");
 const WORKFLOW_FILE_PATH = path.resolve(process.cwd(), "相关文档/设计笔记/workflow-cache.json");
+const NOTES_DIR = path.resolve(process.cwd(), "相关文档", "设计笔记");
+const SRC_DIR = path.resolve(process.cwd(), "src");
 
 function json(res, statusCode, body) {
   res.writeHead(statusCode, {
@@ -53,6 +55,129 @@ async function ensureChatHistoryDir() {
 
 async function ensureWorkflowDir() {
   await fs.mkdir(path.dirname(WORKFLOW_FILE_PATH), { recursive: true });
+}
+
+function sanitizeDesignNoteBasename(name) {
+  return String(name ?? "")
+    .replace(/[/\\?%*:|"<>]/g, "_")
+    .trim()
+    .slice(0, 80);
+}
+
+function resolveDesignNoteAssetAbs(globId) {
+  if (typeof globId !== "string" || !globId.trim()) {
+    throw new Error("缺少素材 id");
+  }
+  const abs = path.resolve(SRC_DIR, globId);
+  const normalizedNotes = path.normalize(NOTES_DIR);
+  const normalizedAbs = path.normalize(abs);
+  const rel = path.relative(normalizedNotes, normalizedAbs);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+    throw new Error("非法素材路径");
+  }
+  if (!/\.(txt|png)$/i.test(normalizedAbs)) {
+    throw new Error("仅支持 .txt 与 .png");
+  }
+  return normalizedAbs;
+}
+
+function buildManualEdgeId(source, target) {
+  return source < target ? `${source}@@${target}` : `${target}@@${source}`;
+}
+
+function remapAssetIdInGraphPayload(payload, oldId, newId) {
+  if (!payload || typeof payload !== "object") {
+    return;
+  }
+  if (payload.selectedId === oldId) {
+    payload.selectedId = newId;
+  }
+  const limits = payload.assetUseLimits;
+  if (limits && typeof limits === "object" && Object.prototype.hasOwnProperty.call(limits, oldId)) {
+    const v = limits[oldId];
+    delete limits[oldId];
+    limits[newId] = v;
+  }
+  const canvases = payload.canvases;
+  if (!Array.isArray(canvases)) {
+    return;
+  }
+  for (const c of canvases) {
+    if (c.placedNodes && typeof c.placedNodes === "object" && Object.prototype.hasOwnProperty.call(c.placedNodes, oldId)) {
+      c.placedNodes[newId] = c.placedNodes[oldId];
+      delete c.placedNodes[oldId];
+    }
+    if (Array.isArray(c.manualEdges)) {
+      const seen = new Set();
+      const next = [];
+      for (const e of c.manualEdges) {
+        if (!e || typeof e !== "object") {
+          continue;
+        }
+        const s = e.source === oldId ? newId : e.source;
+        const t = e.target === oldId ? newId : e.target;
+        if (typeof s !== "string" || typeof t !== "string" || s === t) {
+          continue;
+        }
+        const id = buildManualEdgeId(s, t);
+        if (seen.has(id)) {
+          continue;
+        }
+        seen.add(id);
+        next.push({ id, source: s, target: t });
+      }
+      c.manualEdges = next;
+    }
+    if (c.groupNames && typeof c.groupNames === "object") {
+      const nextGn = {};
+      for (const [k, v] of Object.entries(c.groupNames)) {
+        const parts = k.split("||").map((p) => (p === oldId ? newId : p)).filter(Boolean);
+        if (parts.length < 2) {
+          continue;
+        }
+        const nk = parts.slice().sort((a, b) => a.localeCompare(b, "zh-CN")).join("||");
+        nextGn[nk] = typeof v === "string" ? v : String(v ?? "");
+      }
+      c.groupNames = nextGn;
+    }
+  }
+}
+
+function stripAssetFromGraphPayload(payload, assetId) {
+  if (!payload || typeof payload !== "object") {
+    return;
+  }
+  if (payload.selectedId === assetId) {
+    payload.selectedId = null;
+  }
+  const limits = payload.assetUseLimits;
+  if (limits && typeof limits === "object" && Object.prototype.hasOwnProperty.call(limits, assetId)) {
+    delete limits[assetId];
+  }
+  const canvases = payload.canvases;
+  if (!Array.isArray(canvases)) {
+    return;
+  }
+  for (const c of canvases) {
+    if (c.placedNodes && typeof c.placedNodes === "object") {
+      delete c.placedNodes[assetId];
+    }
+    if (Array.isArray(c.manualEdges)) {
+      c.manualEdges = c.manualEdges.filter(
+        (e) => e && e.source !== assetId && e.target !== assetId,
+      );
+    }
+    if (c.groupNames && typeof c.groupNames === "object") {
+      const nextGn = {};
+      for (const [k, v] of Object.entries(c.groupNames)) {
+        if (k.split("||").includes(assetId)) {
+          continue;
+        }
+        nextGn[k] = v;
+      }
+      c.groupNames = nextGn;
+    }
+  }
 }
 
 function readJsonBody(req) {
@@ -235,6 +360,124 @@ const server = createServer(async (req, res) => {
       json(res, 200, { ok: true, path: WORKFLOW_FILE_PATH });
     } catch (err) {
       text(res, 500, err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/design-notes/rename") {
+    try {
+      const body = await readJsonBody(req);
+      const id = typeof body.id === "string" ? body.id.trim() : "";
+      const rawNew =
+        typeof body.newBaseName === "string"
+          ? body.newBaseName
+          : typeof body.newTitle === "string"
+            ? body.newTitle
+            : "";
+      const newBaseName = sanitizeDesignNoteBasename(rawNew.replace(/\.(txt|png)$/i, "").trim());
+      if (!id) {
+        json(res, 400, { error: "缺少 id" });
+        return;
+      }
+      if (!newBaseName) {
+        json(res, 400, { error: "新文件名无效" });
+        return;
+      }
+      const oldAbs = resolveDesignNoteAssetAbs(id);
+      const ext = path.extname(oldAbs).toLowerCase();
+      if (ext !== ".txt" && ext !== ".png") {
+        json(res, 400, { error: "不支持的扩展名" });
+        return;
+      }
+      const newAbs = path.join(NOTES_DIR, `${newBaseName}${ext}`);
+      const newId = `../相关文档/设计笔记/${newBaseName}${ext}`;
+      try {
+        await fs.access(oldAbs);
+      } catch (accErr) {
+        if (accErr && typeof accErr === "object" && "code" in accErr && accErr.code === "ENOENT") {
+          json(res, 404, { error: "源文件不存在" });
+          return;
+        }
+        throw accErr;
+      }
+      if (path.normalize(oldAbs) === path.normalize(newAbs)) {
+        json(res, 200, { ok: true, newId });
+        return;
+      }
+      try {
+        await fs.access(newAbs);
+        json(res, 409, { error: "目标文件已存在" });
+        return;
+      } catch (exErr) {
+        if (!(exErr && typeof exErr === "object" && "code" in exErr && exErr.code === "ENOENT")) {
+          throw exErr;
+        }
+      }
+      await fs.rename(oldAbs, newAbs);
+      try {
+        const raw = await fs.readFile(GRAPH_FILE_PATH, "utf8");
+        const payload = raw ? JSON.parse(raw) : {};
+        remapAssetIdInGraphPayload(payload, id, newId);
+        payload.updatedAt = Date.now();
+        await ensureGraphDir();
+        await fs.writeFile(GRAPH_FILE_PATH, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+      } catch (graphErr) {
+        if (graphErr && typeof graphErr === "object" && "code" in graphErr && graphErr.code === "ENOENT") {
+          // 尚无 graph-cache.json，忽略
+        } else {
+          await fs.rename(newAbs, oldAbs);
+          throw graphErr;
+        }
+      }
+      json(res, 200, { ok: true, newId });
+    } catch (err) {
+      json(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/design-notes/delete") {
+    try {
+      const body = await readJsonBody(req);
+      const id = typeof body.id === "string" ? body.id.trim() : "";
+      if (!id) {
+        json(res, 400, { error: "缺少 id" });
+        return;
+      }
+      const absPath = resolveDesignNoteAssetAbs(id);
+      try {
+        await fs.unlink(absPath);
+      } catch (unlinkErr) {
+        if (
+          unlinkErr &&
+          typeof unlinkErr === "object" &&
+          "code" in unlinkErr &&
+          unlinkErr.code === "ENOENT"
+        ) {
+          json(res, 404, { error: "文件不存在" });
+          return;
+        }
+        throw unlinkErr;
+      }
+      try {
+        const raw = await fs.readFile(GRAPH_FILE_PATH, "utf8");
+        if (raw) {
+          const payload = JSON.parse(raw);
+          stripAssetFromGraphPayload(payload, id);
+          payload.updatedAt = Date.now();
+          await ensureGraphDir();
+          await fs.writeFile(GRAPH_FILE_PATH, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+        }
+      } catch (graphErr) {
+        if (
+          !(graphErr && typeof graphErr === "object" && "code" in graphErr && graphErr.code === "ENOENT")
+        ) {
+          console.error("design-notes/delete graph update:", graphErr);
+        }
+      }
+      json(res, 200, { ok: true });
+    } catch (err) {
+      json(res, 500, { error: err instanceof Error ? err.message : String(err) });
     }
     return;
   }

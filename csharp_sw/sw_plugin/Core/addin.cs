@@ -35,8 +35,8 @@ namespace SolidWorksAddinStudy
         private static EscCancelMessageFilter? escCancelMessageFilter;
         
         // 任务窗格相关
-        private static ITaskpaneView? machineProjectTaskPaneView;
-        private static MachineProjectTaskPaneControl? machineProjectTaskPaneControl;
+        private static ITaskpaneView? partStatusTaskPaneView;
+        private static PartStatusControl? partStatusTaskPaneControl;
         private static ITaskpaneView? equationModelTaskPaneView;
         private static EquationModelTaskPaneControl? equationModelTaskPaneControl;
 
@@ -376,19 +376,16 @@ namespace SolidWorksAddinStudy
                 // 如果已经存在任务窗格，先清理
                 CleanupTaskPane();
 
-                // 分别加载两套上下文：机型管理与项目管理
                 MachineProjectContext.LoadFromDisk();
-                WorkProjectContext.LoadFromDisk();
 
-                machineProjectTaskPaneView = swApp.CreateTaskpaneView2("", "项目管理");
-                if (machineProjectTaskPaneView != null)
+                partStatusTaskPaneView = swApp.CreateTaskpaneView2("", "零件状态");
+                if (partStatusTaskPaneView != null)
                 {
-                    machineProjectTaskPaneControl = new MachineProjectTaskPaneControl();
-                    machineProjectTaskPaneView.DisplayWindowFromHandlex64(machineProjectTaskPaneControl.Handle.ToInt64());
-                    Debug.WriteLine("项目管理任务窗格已初始化");
+                    partStatusTaskPaneControl = new PartStatusControl(swApp);
+                    partStatusTaskPaneView.DisplayWindowFromHandlex64(partStatusTaskPaneControl.Handle.ToInt64());
+                    Debug.WriteLine("零件状态任务窗格已初始化（随当前装配体）");
                 }
 
-                // 再初始化机型方程式，以便 WorkProject / PartStatus 创建时能读到共享路径
                 equationModelTaskPaneView = swApp.CreateTaskpaneView2("", "机型管理");
                 if (equationModelTaskPaneView != null)
                 {
@@ -411,12 +408,11 @@ namespace SolidWorksAddinStudy
         {
             try
             {
-                if (machineProjectTaskPaneControl != null)
+                if (partStatusTaskPaneControl != null)
                 {
-                    machineProjectTaskPaneControl.Dispose();
-                    machineProjectTaskPaneControl = null;
+                    partStatusTaskPaneControl.Dispose();
+                    partStatusTaskPaneControl = null;
                 }
-
 
                 if (equationModelTaskPaneControl != null)
                 {
@@ -424,12 +420,11 @@ namespace SolidWorksAddinStudy
                     equationModelTaskPaneControl = null;
                 }
                 
-                if (machineProjectTaskPaneView != null)
+                if (partStatusTaskPaneView != null)
                 {
-                    machineProjectTaskPaneView.DeleteView();
-                    machineProjectTaskPaneView = null;
+                    partStatusTaskPaneView.DeleteView();
+                    partStatusTaskPaneView = null;
                 }
-
 
                 if (equationModelTaskPaneView != null)
                 {
@@ -448,51 +443,20 @@ namespace SolidWorksAddinStudy
         /// </summary>
         public static PartStatusControl? GetTaskPaneControl()
         {
-            return machineProjectTaskPaneControl?.GetPartStatusPageControl();
-        }
-
-        public static MachineProjectTaskPaneControl? GetMachineProjectTaskPaneControl()
-        {
-            return machineProjectTaskPaneControl;
-        }
-
-        public static WorkProjectTaskPaneControl? GetWorkProjectTaskPaneControl()
-        {
-            return machineProjectTaskPaneControl?.GetWorkProjectPageControl();
-        }
-
-        public static bool FocusWorkProjectTaskPane()
-        {
-            if (machineProjectTaskPaneControl == null)
-            {
-                return false;
-            }
-
-            try
-            {
-                machineProjectTaskPaneControl.ShowWorkflowPage();
-                machineProjectTaskPaneControl.Select();
-                machineProjectTaskPaneControl.Focus();
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
+            return partStatusTaskPaneControl;
         }
 
         public static bool FocusPartStatusTaskPane()
         {
-            if (machineProjectTaskPaneControl == null)
+            if (partStatusTaskPaneControl == null)
             {
                 return false;
             }
 
             try
             {
-                machineProjectTaskPaneControl.ShowPartStatusPage();
-                machineProjectTaskPaneControl.Select();
-                machineProjectTaskPaneControl.Focus();
+                partStatusTaskPaneControl.Select();
+                partStatusTaskPaneControl.Focus();
                 return true;
             }
             catch

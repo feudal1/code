@@ -1,3 +1,3 @@
-Set-Location "E:\code\my_typescript"
+Set-Location $PSScriptRoot
 
 npm run dev:all

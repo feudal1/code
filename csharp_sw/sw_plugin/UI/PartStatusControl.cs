@@ -85,7 +85,7 @@ namespace SolidWorksAddinStudy
             header.Controls.Add(infoLabel);
 
             projectPathLabel = new Label();
-            projectPathLabel.Text = "项目装配体：未设置";
+            projectPathLabel.Text = "当前装配体：未打开";
             projectPathLabel.Location = new System.Drawing.Point(0, 26);
             projectPathLabel.Size = new System.Drawing.Size(460, 18);
             projectPathLabel.Font = new System.Drawing.Font("Microsoft YaHei", 8.25F);
@@ -143,79 +143,48 @@ namespace SolidWorksAddinStudy
             this.Controls.Add(statusGrid);
             this.Controls.Add(header);
 
-            WorkProjectContext.Changed += OnSharedProjectBindingChanged;
-            SyncSharedProjectLabel();
+            SyncAssemblyPathLabel();
             TryRestoreCachedStatusOnStartup();
         }
 
-        protected override void Dispose(bool disposing)
+        /// <summary>顶部标签：显示当前关注的装配体（已刷新后的路径或活动文档）。</summary>
+        private void SyncAssemblyPathLabel()
         {
-            if (disposing)
+            const string prefix = "当前装配体：";
+            if (!string.IsNullOrWhiteSpace(boundAssemblyPath))
             {
-                WorkProjectContext.Changed -= OnSharedProjectBindingChanged;
-            }
-
-            base.Dispose(disposing);
-        }
-
-        private void OnSharedProjectBindingChanged()
-        {
-            if (InvokeRequired)
-            {
-                BeginInvoke(new Action(OnSharedProjectBindingChanged));
+                projectPathLabel.Text = prefix + Path.GetFileName(boundAssemblyPath.Trim());
                 return;
             }
 
-            SyncSharedProjectLabel();
-            string ctx = WorkProjectContext.BoundAssemblyFullPath?.Trim() ?? "";
-            if (string.IsNullOrEmpty(ctx))
+            ModelDoc2? active = swApp == null ? null : (ModelDoc2)swApp.ActiveDoc;
+            if (active != null && active.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY)
             {
+                string p = active.GetPathName()?.Trim() ?? "";
+                projectPathLabel.Text = string.IsNullOrEmpty(p)
+                    ? prefix + "(请先保存装配体)"
+                    : prefix + Path.GetFileName(p);
                 return;
             }
 
-            if (!string.Equals(boundAssemblyPath, ctx, StringComparison.OrdinalIgnoreCase) && partStatusList.Count > 0)
-            {
-                partStatusList.Clear();
-                RefreshStatusDisplay();
-                infoLabel.Text = "项目共享装配体已切换，请重新刷新数据";
-            }
-        }
-
-        private void SyncSharedProjectLabel()
-        {
-            string ctx = WorkProjectContext.BoundAssemblyFullPath?.Trim() ?? "";
-            if (!string.IsNullOrEmpty(ctx))
-            {
-                projectPathLabel.Text = "项目装配体：" + Path.GetFileName(ctx);
-            }
-            else
-            {
-                projectPathLabel.Text = "项目装配体：未设置（刷新时使用当前装配体）";
-            }
+            projectPathLabel.Text = prefix + "未打开装配体";
         }
 
         private void TryRestoreCachedStatusOnStartup()
         {
             try
             {
-                string candidateAssemblyPath = WorkProjectContext.BoundAssemblyFullPath?.Trim() ?? string.Empty;
+                string candidateAssemblyPath = string.Empty;
                 List<PartStatusInfo> cached = new List<PartStatusInfo>();
 
-                if (!string.IsNullOrWhiteSpace(candidateAssemblyPath))
+                ModelDoc2 activeDoc = swApp == null ? null : (ModelDoc2)swApp.ActiveDoc;
+                if (activeDoc != null &&
+                    activeDoc.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY)
                 {
-                    cached = PartStatusProjectStore.LoadSnapshot(candidateAssemblyPath);
-                }
-                else
-                {
-                    ModelDoc2 activeDoc = swApp == null ? null : (ModelDoc2)swApp.ActiveDoc;
-                    if (activeDoc != null &&
-                        activeDoc.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY)
+                    candidateAssemblyPath = activeDoc.GetPathName()?.Trim() ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(candidateAssemblyPath))
                     {
-                        candidateAssemblyPath = activeDoc.GetPathName() ?? string.Empty;
-                        if (!string.IsNullOrWhiteSpace(candidateAssemblyPath))
-                        {
-                            cached = PartStatusProjectStore.LoadSnapshot(candidateAssemblyPath);
-                        }
+                        cached = PartStatusProjectStore.LoadSnapshot(candidateAssemblyPath);
                     }
                 }
 
@@ -233,7 +202,7 @@ namespace SolidWorksAddinStudy
 
                 boundAssemblyPath = candidateAssemblyPath?.Trim() ?? string.Empty;
                 LoadFromBomData(cached);
-                SyncSharedProjectLabel();
+                SyncAssemblyPathLabel();
                 infoLabel.Text = $"零件处理状态监控 (已恢复 {partStatusList.Count} 条缓存)";
                 //LogTaskPane($"启动时已恢复零件状态缓存：{partStatusList.Count} 条");
             }
@@ -243,37 +212,22 @@ namespace SolidWorksAddinStudy
             }
         }
 
-        /// <summary>
-        /// 解析本次刷新使用的装配体路径：若已设置共享机型，则必须与当前活动装配体一致。
-        /// </summary>
-        private static bool TryGetProjectAssemblyForRefresh(ModelDoc2 activeAssembly, out string assemblyPath, out string errorMessage)
+        /// <summary>本次刷新使用的装配体路径：始终为当前活动、已保存的装配体。</summary>
+        private static bool TryGetActiveSavedAssemblyPath(ModelDoc2 activeAssembly, out string assemblyPath, out string errorMessage)
         {
             assemblyPath = string.Empty;
             errorMessage = string.Empty;
-            string shared = WorkProjectContext.BoundAssemblyFullPath?.Trim() ?? "";
-            if (!string.IsNullOrEmpty(shared))
+
+            if (activeAssembly == null || activeAssembly.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY)
             {
-                if (!File.Exists(shared))
-                {
-                    errorMessage = "项目装配体文件已不存在，请在「工作项目记录」中重新设置。";
-                    return false;
-                }
-
-                string activePath = activeAssembly.GetPathName() ?? string.Empty;
-                if (!string.Equals(activePath, shared, StringComparison.OrdinalIgnoreCase))
-                {
-                    errorMessage = "当前活动装配体与所选项目装配体不一致。\n请先打开项目装配体：" + Path.GetFileName(shared);
-                    return false;
-                }
-
-                assemblyPath = shared;
-                return true;
+                errorMessage = "当前文档不是装配体。";
+                return false;
             }
 
             assemblyPath = activeAssembly.GetPathName() ?? string.Empty;
             if (string.IsNullOrEmpty(assemblyPath))
             {
-                errorMessage = "请先保存装配体文件，以便按项目保存出图状态。";
+                errorMessage = "请先保存装配体文件，以便按装配体路径保存出图状态。";
                 return false;
             }
 
@@ -307,7 +261,7 @@ namespace SolidWorksAddinStudy
                     return;
                 }
 
-                if (!TryGetProjectAssemblyForRefresh(swModel, out string assemblyPath, out string pathError))
+                if (!TryGetActiveSavedAssemblyPath(swModel, out string assemblyPath, out string pathError))
                 {
                     MessageBox.Show(pathError, "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
@@ -339,7 +293,7 @@ namespace SolidWorksAddinStudy
                         this.Invoke(new Action(() =>
                         {
                             boundAssemblyPath = assemblyPath;
-                            SyncSharedProjectLabel();
+                            SyncAssemblyPathLabel();
                             LoadFromBomData(partInfoList);
                             refreshButton.Enabled = true;
                             infoLabel.Text = $"零件处理状态监控 (共 {partStatusList.Count} 条记录)";
@@ -399,7 +353,7 @@ namespace SolidWorksAddinStudy
                     return;
                 }
 
-                if (!TryGetProjectAssemblyForRefresh(swModel, out string assemblyPath, out string pathError))
+                if (!TryGetActiveSavedAssemblyPath(swModel, out string assemblyPath, out string pathError))
                 {
                     MessageBox.Show(pathError, "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
@@ -431,7 +385,7 @@ namespace SolidWorksAddinStudy
                         this.Invoke(new Action(() =>
                         {
                             boundAssemblyPath = assemblyPath;
-                            SyncSharedProjectLabel();
+                            SyncAssemblyPathLabel();
                             LoadFromBomData(partInfoList);
                             refreshButton.Enabled = true;
                             infoLabel.Text = $"零件处理状态监控 (共 {partStatusList.Count} 条记录)";
