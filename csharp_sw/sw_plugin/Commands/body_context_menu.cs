@@ -297,68 +297,168 @@ namespace SolidWorksAddinStudy
           return ExecuteContextMenuCommand("mark_square_tube");
       }
 
+      public string mark_part_for_deletion()
+      {
+          return ExecuteContextMenuCommand("mark_part_for_deletion");
+      }
+
+      /// <summary>
+      /// 将当前右键选中解析到的零件写入拓扑库，并对每个 body 添加一条用户标注。
+      /// </summary>
+      private bool TryAddTopologyUserLabelsForContextPart(
+          string labelCategory,
+          string labelValue,
+          string labelNote,
+          out int labeledCount,
+          out string displayPartName,
+          out string errorMessage)
+      {
+          labeledCount = 0;
+          displayPartName = null;
+          errorMessage = null;
+
+          if (swApp == null)
+          {
+              errorMessage = "SolidWorks 未初始化";
+              return false;
+          }
+
+          ModelDoc2 activeModel = (ModelDoc2)swApp.ActiveDoc;
+          if (activeModel == null)
+          {
+              swApp.SendMsgToUser("请先打开一个文档");
+              errorMessage = "没有打开的文档";
+              return false;
+          }
+
+          if (!TryGetTargetPartFromContextSelection(out var targetPart) || targetPart == null)
+          {
+              swApp.SendMsgToUser("请先选中一个对象（面/实体/组件）");
+              errorMessage = "未选中有效对象";
+              return false;
+          }
+
+          if (targetPart.GetType() != (int)swDocumentTypes_e.swDocPART)
+          {
+              swApp.SendMsgToUser("请选择零件对象");
+              errorMessage = "目标不是零件文档";
+              return false;
+          }
+
+          string partPath = targetPart.GetPathName();
+          if (string.IsNullOrWhiteSpace(partPath))
+          {
+              swApp.SendMsgToUser("选中的零件尚未保存，请先保存零件");
+              errorMessage = "零件未保存";
+              return false;
+          }
+
+          var graphs = FaceGraphBuilder.BuildGraphs(targetPart);
+          if (graphs == null || graphs.Count == 0)
+          {
+              swApp.SendMsgToUser("无法构建零件拓扑图，标注失败");
+              errorMessage = "构建拓扑图失败";
+              return false;
+          }
+
+          TopologyLabeler.Initialize();
+          TopologyDatabase? db = TopologyLabeler.GetDatabase();
+          if (db == null)
+          {
+              swApp.SendMsgToUser("拓扑数据库未初始化，标注失败");
+              errorMessage = "拓扑数据库未初始化";
+              return false;
+          }
+
+          string partName = targetPart.GetTitle();
+          List<int> bodyIds = db.UpsertPartWithBodies(partName, partPath, graphs);
+          foreach (int bodyId in bodyIds)
+          {
+              db.AddLabel(bodyId, labelCategory, labelValue, 1.0, labelNote);
+              labeledCount++;
+          }
+
+          displayPartName = Path.GetFileNameWithoutExtension(partPath);
+          return true;
+      }
+
+      /// <summary>
+      /// 从拓扑库删除当前右键选中解析到的零件记录（含 bodies、WL、标注等，外键级联）。
+      /// </summary>
+      private bool TryDeleteTopologyPartDataForContextPart(out string displayPartName, out string errorMessage)
+      {
+          displayPartName = null;
+          errorMessage = null;
+
+          if (swApp == null)
+          {
+              errorMessage = "SolidWorks 未初始化";
+              return false;
+          }
+
+          ModelDoc2 activeModel = (ModelDoc2)swApp.ActiveDoc;
+          if (activeModel == null)
+          {
+              swApp.SendMsgToUser("请先打开一个文档");
+              errorMessage = "没有打开的文档";
+              return false;
+          }
+
+          if (!TryGetTargetPartFromContextSelection(out var targetPart) || targetPart == null)
+          {
+              swApp.SendMsgToUser("请先选中一个对象（面/实体/组件）");
+              errorMessage = "未选中有效对象";
+              return false;
+          }
+
+          if (targetPart.GetType() != (int)swDocumentTypes_e.swDocPART)
+          {
+              swApp.SendMsgToUser("请选择零件对象");
+              errorMessage = "目标不是零件文档";
+              return false;
+          }
+
+          string partPath = targetPart.GetPathName();
+          if (string.IsNullOrWhiteSpace(partPath))
+          {
+              swApp.SendMsgToUser("选中的零件尚未保存，请先保存零件");
+              errorMessage = "零件未保存";
+              return false;
+          }
+
+          TopologyLabeler.Initialize();
+          TopologyDatabase? db = TopologyLabeler.GetDatabase();
+          if (db == null)
+          {
+              swApp.SendMsgToUser("拓扑数据库未初始化，删除失败");
+              errorMessage = "拓扑数据库未初始化";
+              return false;
+          }
+
+          int? partId = db.TryGetPartIdByNameAndPath(targetPart.GetTitle(), partPath);
+          if (partId == null)
+          {
+              swApp.SendMsgToUser("拓扑库中无该零件记录");
+              errorMessage = "拓扑库中无该零件记录";
+              return false;
+          }
+
+          db.DeletePartData(partId.Value);
+          displayPartName = Path.GetFileNameWithoutExtension(partPath);
+          return true;
+      }
+
       [SolidWorksAddinStudy.Command(2006, "标注为方管", "将当前选中对象对应零件标注为方管（用于拓扑识别）", "mark_square_tube", (int)swDocumentTypes_e.swDocPART, (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true, Source = CommandSource.ContextMenu)]
       private string MarkSquareTubeCore()
       {
           try
           {
-              if (swApp == null)
+              if (!TryAddTopologyUserLabelsForContextPart("零件类别", "方管", "右键手工标注", out int labeledCount, out string displayName, out string err))
               {
-                  Debug.WriteLine("SolidWorks 未初始化");
-                  return "SolidWorks 未初始化";
+                  return err;
               }
 
-              ModelDoc2 activeModel = (ModelDoc2)swApp.ActiveDoc;
-              if (activeModel == null)
-              {
-                  swApp.SendMsgToUser("请先打开一个文档");
-                  return "没有打开的文档";
-              }
-
-              if (!TryGetTargetPartFromContextSelection(out var targetPart) || targetPart == null)
-              {
-                  swApp.SendMsgToUser("请先选中一个对象（面/实体/组件）");
-                  return "未选中有效对象";
-              }
-
-              if (targetPart.GetType() != (int)swDocumentTypes_e.swDocPART)
-              {
-                  swApp.SendMsgToUser("请选择零件对象");
-                  return "目标不是零件文档";
-              }
-
-              string partPath = targetPart.GetPathName();
-              if (string.IsNullOrWhiteSpace(partPath))
-              {
-                  swApp.SendMsgToUser("选中的零件尚未保存，请先保存零件");
-                  return "零件未保存";
-              }
-
-              var graphs = FaceGraphBuilder.BuildGraphs(targetPart);
-              if (graphs == null || graphs.Count == 0)
-              {
-                  swApp.SendMsgToUser("无法构建零件拓扑图，标注失败");
-                  return "构建拓扑图失败";
-              }
-
-              TopologyLabeler.Initialize();
-              TopologyDatabase? db = TopologyLabeler.GetDatabase();
-              if (db == null)
-              {
-                  swApp.SendMsgToUser("拓扑数据库未初始化，标注失败");
-                  return "拓扑数据库未初始化";
-              }
-
-              string partName = targetPart.GetTitle();
-              List<int> bodyIds = db.UpsertPartWithBodies(partName, partPath, graphs);
-              int labeledCount = 0;
-              foreach (int bodyId in bodyIds)
-              {
-                  db.AddLabel(bodyId, "零件类别", "方管", 1.0, "右键手工标注");
-                  labeledCount++;
-              }
-
-              string msg = $"已标注方管: {Path.GetFileNameWithoutExtension(partPath)}，Body 数={labeledCount}";
+              string msg = $"已标注方管: {displayName}，Body 数={labeledCount}";
               Debug.WriteLine(msg);
               swApp.SendMsgToUser(msg);
               return msg;
@@ -368,6 +468,29 @@ namespace SolidWorksAddinStudy
               Debug.WriteLine($"右键标注方管失败：{ex.Message}");
               swApp?.SendMsgToUser($"右键标注方管失败：{ex.Message}");
               return $"右键标注方管失败：{ex.Message}";
+          }
+      }
+
+      [SolidWorksAddinStudy.Command(2008, "从拓扑库删除零件", "删除拓扑库中当前零件及其 bodies、WL 结果与用户标注（级联）", "mark_part_for_deletion", (int)swDocumentTypes_e.swDocPART, (int)swDocumentTypes_e.swDocASSEMBLY, ShowOutputWindow = true, Source = CommandSource.ContextMenu)]
+      private string MarkPartForDeletionCore()
+      {
+          try
+          {
+              if (!TryDeleteTopologyPartDataForContextPart(out string displayName, out string err))
+              {
+                  return err;
+              }
+
+              string msg = $"已从拓扑库删除: {displayName}";
+              Debug.WriteLine(msg);
+              swApp.SendMsgToUser(msg);
+              return msg;
+          }
+          catch (Exception ex)
+          {
+              Debug.WriteLine($"右键从拓扑库删除失败：{ex.Message}");
+              swApp?.SendMsgToUser($"右键从拓扑库删除失败：{ex.Message}");
+              return $"右键从拓扑库删除失败：{ex.Message}";
           }
       }
 
@@ -676,6 +799,7 @@ namespace SolidWorksAddinStudy
                 RegisterContextMenuForCommonSelections("修正折弯K", "fix_bends_kcheck_menu");
                 RegisterContextMenuForCommonSelections("modify_equations", "modify_equations");
                 RegisterContextMenuForCommonSelections("标注当前零件为方管", "mark_square_tube");
+                RegisterContextMenuForCommonSelections("从拓扑库删除当前零件", "mark_part_for_deletion");
 
                       
             }

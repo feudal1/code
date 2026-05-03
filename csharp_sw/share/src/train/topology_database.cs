@@ -787,6 +787,26 @@ namespace tools
         }
 
         /// <summary>
+        /// 按与 <see cref="UpsertPartWithBodies"/> 一致的零件名、文件路径查找零件主键；无记录时返回 null。
+        /// </summary>
+        public int? TryGetPartIdByNameAndPath(string partName, string filePath)
+        {
+            string partNameWithoutExtension = Path.GetFileNameWithoutExtension(partName);
+            using (var connection = new SQLiteConnection(_connectionString))
+            {
+                connection.Open();
+                string select = "SELECT id FROM parts WHERE part_name = @part_name AND file_path = @file_path";
+                using (var cmd = new SQLiteCommand(select, connection))
+                {
+                    cmd.Parameters.AddWithValue("@part_name", partNameWithoutExtension);
+                    cmd.Parameters.AddWithValue("@file_path", filePath);
+                    object? result = cmd.ExecuteScalar();
+                    return result != null ? Convert.ToInt32(result) : (int?)null;
+                }
+            }
+        }
+
+        /// <summary>
         /// 获取 body 的所有标注
         /// </summary>
         public Dictionary<string, List<(string Value, double Confidence, string Notes)>> GetBodyLabels(int bodyId)

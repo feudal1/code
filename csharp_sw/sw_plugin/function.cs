@@ -1236,6 +1236,50 @@ using SolidWorksAddinStudy.Services;
         }
     }
 
+    [SolidWorksAddinStudy.Command(1027, "上次导出机型SLDPRT→剪贴板", "将最近一次「导出选中子装配体为SLDPRT」生成的文件复制到剪贴板（可在资源管理器中粘贴）", "copy_last_exported_subasm_sldprt", 0, ShowOutputWindow = true)]
+    private void CopyLastExportedSubAsmSldprt()
+    {
+        try
+        {
+            StartCancelableCommand();
+            if (swApp == null)
+            {
+                Debug.WriteLine("SolidWorks 未初始化");
+                return;
+            }
+
+            string? sourcePath = LastExportedSubAsmSldprtPath;
+            if (string.IsNullOrWhiteSpace(sourcePath))
+            {
+                swApp.SendMsgToUser("尚未记录导出的 SLDPRT，请先在装配体中执行「导出选中子装配体为SLDPRT」并成功保存。");
+                return;
+            }
+
+            if (!File.Exists(sourcePath))
+            {
+                swApp.SendMsgToUser($"记录的文件已不存在，请重新导出：\n{sourcePath}");
+                return;
+            }
+
+            Clipboard.Clear();
+            var fileList = new System.Collections.Specialized.StringCollection();
+            fileList.Add(sourcePath);
+            Clipboard.SetFileDropList(fileList);
+
+            swApp.SendMsgToUser($"已复制到剪贴板:\n{Path.GetFileName(sourcePath)}");
+            Debug.WriteLine($"上次导出机型 SLDPRT 已放入剪贴板: {sourcePath}");
+        }
+        catch (OperationCanceledException)
+        {
+            swApp?.SendMsgToUser("命令已中止");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"复制上次导出的机型 SLDPRT 到剪贴板失败: {ex.Message}");
+            swApp?.SendMsgToUser($"复制到剪贴板失败: {ex.Message}");
+        }
+    }
+
     /// <summary>
     /// 从工程图更新对应零件的出图状态
     /// </summary>

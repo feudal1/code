@@ -512,28 +512,132 @@ namespace tools
                 }
             }
 
-            TryRebuildActiveAssemblyDocument(swApp);
+            var partKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in rows)
+            {
+                if (row.Part == null)
+                {
+                    continue;
+                }
+
+                string pk = GetPartStorageKey(row.Part);
+                if (!string.IsNullOrWhiteSpace(pk))
+                {
+                    partKeys.Add(pk);
+                }
+            }
+
+            TryRebuildOpenAssembliesReferencingPartKeys(swApp, partKeys);
         }
 
-        private static void TryRebuildActiveAssemblyDocument(SldWorks swApp)
+        /// <summary>
+        /// 方程式改完后当前活动文档常为零件；对所有已打开且引用这些零件路径的装配体执行重建。
+        /// </summary>
+        private static void TryRebuildOpenAssembliesReferencingPartKeys(SldWorks swApp, IEnumerable<string> partStorageKeys)
         {
-            if (swApp == null)
+            if (swApp == null || partStorageKeys == null)
             {
                 return;
             }
 
+            var keySet = partStorageKeys
+                .Where(k => !string.IsNullOrWhiteSpace(k))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (keySet.Count == 0)
+            {
+                return;
+            }
+
+            var toRebuild = new List<ModelDoc2>();
             try
             {
-                var active = swApp.ActiveDoc as ModelDoc2;
-                if (active != null && active.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY)
+                object[] docs = (object[])swApp.GetDocuments();
+                if (docs == null)
                 {
-                    active.EditRebuild3();
+                    return;
+                }
+
+                foreach (object o in docs)
+                {
+                    var md = o as ModelDoc2;
+                    if (md == null || md.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY)
+                    {
+                        continue;
+                    }
+
+                    if (AssemblyReferencesAnyPartPath((AssemblyDoc)md, keySet))
+                    {
+                        toRebuild.Add(md);
+                    }
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"装配体重建失败: {ex.Message}");
+                Debug.WriteLine($"枚举装配体以重建时出错: {ex.Message}");
             }
+
+            toRebuild.Sort((a, b) => GetAssemblyFlatComponentCount(a).CompareTo(GetAssemblyFlatComponentCount(b)));
+
+            foreach (ModelDoc2 asmModel in toRebuild)
+            {
+                try
+                {
+                    asmModel.EditRebuild3();
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"装配体重建失败 {asmModel.GetTitle()}: {ex.Message}");
+                }
+            }
+        }
+
+        private static int GetAssemblyFlatComponentCount(ModelDoc2 asmModel)
+        {
+            try
+            {
+                object[] comps = (object[])((AssemblyDoc)asmModel).GetComponents(false);
+                return comps?.Length ?? 0;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        private static bool AssemblyReferencesAnyPartPath(AssemblyDoc assy, HashSet<string> partKeys)
+        {
+            object[] comps = (object[])assy.GetComponents(false);
+            if (comps == null)
+            {
+                return false;
+            }
+
+            foreach (object obj in comps)
+            {
+                var comp = obj as Component2;
+                if (comp == null)
+                {
+                    continue;
+                }
+
+                string path = comp.GetPathName();
+                if (string.IsNullOrWhiteSpace(path))
+                {
+                    continue;
+                }
+
+                if (!path.EndsWith(".SLDPRT", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (partKeys.Contains(path))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -985,7 +1089,7 @@ namespace tools
                 }
             }
 
-            TryRebuildActiveAssemblyDocument(swApp);
+            TryRebuildOpenAssembliesReferencingPartKeys(swApp, touchedParts.Keys);
 
             return $"一键应用完成：成功 {ok} 条，失败 {fail} 条";
         }

@@ -40,6 +40,8 @@ namespace SolidWorksAddinStudy
         private static ITaskpaneView? equationModelTaskPaneView;
         private static EquationModelTaskPaneControl? equationModelTaskPaneControl;
 
+        /// <summary>最近一次「导出选中子装配体为 SLDPRT」成功后的文件完整路径。</summary>
+        public static string? LastExportedSubAsmSldprtPath { get; set; }
 
         /// <summary>
         /// 显示输出窗口
